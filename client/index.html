@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Multiplayer drawing and guessing game. Create a room, invite friends, draw and guess words.">
+  <title>Skribbl Game</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Landing / Join screen -->
+  <div id="screen-landing" class="screen active">
+    <div class="landing-container">
+      <h1 class="logo">Skribbl<span class="logo-dot">.</span></h1>
+      <p class="tagline">Draw, Guess, Win.</p>
+      <div class="landing-actions">
+        <button id="btn-create-room" class="btn btn-primary">Create Room</button>
+        <div class="divider"><span>or</span></div>
+        <div class="join-form">
+          <input type="text" id="input-room-code" placeholder="Paste room link or code" class="input" />
+          <button id="btn-join-room" class="btn btn-secondary">Join</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Name entry screen -->
+  <div id="screen-name" class="screen">
+    <div class="name-container">
+      <h2>Enter your name</h2>
+      <input type="text" id="input-name" placeholder="Your name" class="input" maxlength="20" />
+      <button id="btn-enter" class="btn btn-primary">Enter</button>
+      <p id="name-error" class="error-text"></p>
+    </div>
+  </div>
+
+  <!-- Lobby screen -->
+  <div id="screen-lobby" class="screen">
+    <div class="lobby-container">
+      <h2>Lobby</h2>
+      <div class="lobby-top">
+        <div class="share-link">
+          <span>Share this link:</span>
+          <input type="text" id="share-url" class="input" readonly />
+          <button id="btn-copy-link" class="btn btn-small">Copy</button>
+        </div>
+      </div>
+      <div class="lobby-content">
+        <div class="lobby-settings" id="lobby-settings">
+          <h3>Game Settings <span id="host-only-badge" class="badge">Host Only</span></h3>
+          <label>Rounds
+            <select id="setting-rounds" class="input">
+              <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
+              <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+              <option value="7">7</option><option value="8">8</option><option value="9">9</option>
+              <option value="10">10</option>
+            </select>
+          </label>
+          <label>Draw Time (seconds)
+            <input type="number" id="setting-draw-time" class="input" min="30" max="180" value="80" />
+          </label>
+          <label>Word List
+            <select id="setting-word-mode" class="input">
+              <option value="default">Default Only</option>
+              <option value="custom">Custom Only</option>
+              <option value="mix">Mix</option>
+            </select>
+          </label>
+          <div id="custom-words-area" class="hidden">
+            <label>Custom Words (one per line, min 10)
+              <textarea id="setting-custom-words" class="input textarea" rows="5" placeholder="word1&#10;word2&#10;word3"></textarea>
+            </label>
+          </div>
+          <button id="btn-start-game" class="btn btn-primary btn-start">Start Game</button>
+        </div>
+        <div class="lobby-players">
+          <h3>Players</h3>
+          <ul id="lobby-player-list" class="player-list"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game screen -->
+  <div id="screen-game" class="screen">
+    <div class="game-layout">
+      <!-- Top bar -->
+      <div class="game-topbar">
+        <div class="round-info">Round <span id="round-current">1</span> / <span id="round-total">3</span></div>
+        <div class="word-display" id="word-display"></div>
+        <div class="timer-display">
+          <span id="timer-value">80</span>s
+          <span id="ping-display" class="ping-dot" title="Connection quality"></span>
+        </div>
+      </div>
+
+      <!-- Main content -->
+      <div class="game-main">
+        <!-- Player list -->
+        <div class="game-sidebar-left">
+          <ul id="game-player-list" class="player-list"></ul>
+        </div>
+
+        <!-- Canvas area -->
+        <div class="canvas-area">
+          <canvas id="game-canvas" width="800" height="600"></canvas>
+          <!-- Word choice overlay -->
+          <div id="word-choice-overlay" class="overlay hidden">
+            <h3>Choose a word:</h3>
+            <div id="word-choices" class="word-choices"></div>
+          </div>
+          <!-- Toolbar (visible for drawer) -->
+          <div id="toolbar" class="toolbar hidden">
+            <div class="tool-group">
+              <button class="tool-btn active" data-tool="pen" title="Pen">&#9998;</button>
+              <button class="tool-btn" data-tool="eraser" title="Eraser">&#9003;</button>
+              <button class="tool-btn" data-tool="fill" title="Fill">&#9681;</button>
+            </div>
+            <div class="tool-group">
+              <input type="range" id="brush-size" min="2" max="40" value="5" class="slider" title="Brush size" />
+              <span id="brush-size-label" class="size-label">5</span>
+            </div>
+            <div class="tool-group color-palette" id="color-palette"></div>
+            <div class="tool-group">
+              <input type="color" id="custom-color" value="#000000" title="Custom color" class="color-input" />
+            </div>
+            <div class="tool-group">
+              <button class="tool-btn" id="btn-undo" title="Undo">&#8630;</button>
+              <button class="tool-btn" id="btn-clear" title="Clear">&#10006;</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat area -->
+        <div class="game-sidebar-right">
+          <div id="chat-messages" class="chat-messages"></div>
+          <div class="chat-input-area">
+            <input type="text" id="chat-input" class="input" placeholder="Type your guess..." maxlength="200" />
+            <button id="btn-send-chat" class="btn btn-small">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game End / Replay screen -->
+  <div id="screen-end" class="screen">
+    <div class="end-container">
+      <h2>Game Over!</h2>
+      <div id="final-leaderboard" class="leaderboard"></div>
+      <div class="replay-section">
+        <h3>Replay</h3>
+        <div class="replay-controls">
+          <select id="replay-turn-select" class="input"></select>
+          <button id="btn-replay-play" class="btn btn-small">Play</button>
+          <button id="btn-replay-pause" class="btn btn-small">Pause</button>
+          <select id="replay-speed" class="input">
+            <option value="1">1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+          </select>
+          <input type="range" id="replay-scrubber" class="slider replay-scrubber" min="0" max="100" value="0" />
+        </div>
+        <canvas id="replay-canvas" width="800" height="600"></canvas>
+        <p id="replay-word" class="replay-word"></p>
+      </div>
+      <button id="btn-new-game" class="btn btn-primary">New Game</button>
+    </div>
+  </div>
+
+  <!-- Reconnecting banner -->
+  <div id="reconnect-banner" class="reconnect-banner hidden">
+    Reconnecting...
+  </div>
+
+  <!-- Error modal -->
+  <div id="error-modal" class="modal hidden">
+    <div class="modal-content">
+      <p id="error-modal-text"></p>
+      <button id="btn-error-ok" class="btn btn-primary">OK</button>
+    </div>
+  </div>
+
+  <script src="bundle.js"></script>
+</body>
+</html>

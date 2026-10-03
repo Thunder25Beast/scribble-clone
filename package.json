@@ -1,0 +1,27 @@
+{
+  "name": "skribbl-game",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Real time multiplayer drawing and guessing game",
+  "scripts": {
+    "build:client": "esbuild client/main.ts --bundle --outfile=dist/client/bundle.js --minify --sourcemap && node -e \"const fs=require('fs');fs.copyFileSync('client/index.html','dist/client/index.html');fs.copyFileSync('client/style.css','dist/client/style.css');\"",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run build:server && npm run build:client",
+    "start": "npm run build && node dist/server/index.js",
+    "dev:server": "tsc -p tsconfig.server.json --watch",
+    "dev:client": "esbuild client/main.ts --bundle --outfile=dist/client/bundle.js --sourcemap --watch",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "loadtest": "tsx tools/loadtest.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.21.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

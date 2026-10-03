@@ -170,16 +170,21 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Room link: /r/<roomId> serves the same index.html
-  let filePath: string;
-  if (url.pathname.startsWith('/r/')) {
-    filePath = path.join(distClientDir, 'index.html');
-  } else {
-    let safePath = url.pathname === '/' ? '/index.html' : url.pathname;
-    // Prevent directory traversal
-    safePath = path.normalize(safePath).replace(/^(\.\.[\/\\])+/, '');
-    filePath = path.join(distClientDir, safePath);
+  // Room link: /r/<roomId> serves index.html, unless a static asset was requested
+  let requestPath = url.pathname;
+  if (requestPath.startsWith('/r/')) {
+    const afterPrefix = requestPath.slice(3); // e.g. "dhPRTH-u" or "style.css"
+    if (path.extname(afterPrefix)) {
+      requestPath = '/' + afterPrefix;
+    } else {
+      requestPath = '/index.html';
+    }
   }
+
+  let safePath = requestPath === '/' ? '/index.html' : requestPath;
+  // Prevent directory traversal
+  safePath = path.normalize(safePath).replace(/^(\.\.[\/\\])+/, '');
+  const filePath = path.join(distClientDir, safePath);
 
   const ext = path.extname(filePath);
   const contentType = MIME_TYPES[ext] || 'application/octet-stream';

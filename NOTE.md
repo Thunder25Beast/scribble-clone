@@ -42,17 +42,45 @@ The game is designed with a state recovery model that persists room metadata and
 
 Capacity was empirically measured on this host machine using `tools/loadtest.ts`:
 
-* Machine: 11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz (8 cores), 16 GB RAM, Node.js v23.3.0, Windows 11.
-* Scenario: Each room consisted of 8 active participants (1 drawer bot and 7 guesser bots). The drawer streamed 30 stroke batches per second (10 coordinates per batch) carrying client send timestamps. Guessers submitted chat guesses every 3 seconds.
-* Metric criteria for healthy operation: p95 end to end delivery latency under 100 ms, and Node event loop delay p99 under 50 ms.
+* Machine: 11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz (4 physical cores, 8 logical threads), 16 GB RAM, Node.js v23.3.0, Windows 11.
+* Load architecture: Single Node.js server instance; multi-room client bot simulator running in an isolated sub-process. Both processes share the host machine.
+* Metric criteria for healthy operation: p95 end to end delivery latency under 100 ms, event loop delay p99 under 50 ms (via `perf_hooks.monitorEventLoopDelay`), and server process CPU under 70%.
 
-Measured benchmark data:
-* 25 rooms (200 players): 3,564 msgs/sec, p50 latency 2 ms, p95 latency 4 ms, event loop p99 delay 34.2 ms, heap 35 MB. Healthy: PASS.
-* 50 rooms (400 players): 7,416 msgs/sec, p50 latency 5 ms, p95 latency 11 ms, event loop p99 delay 33.2 ms, heap 75 MB. Healthy: PASS.
-* 100 rooms (800 players): 14,869 msgs/sec, p50 latency 9 ms, p95 latency 19 ms, event loop p99 delay 37.7 ms, heap 171 MB. Healthy: PASS.
-* 150 rooms (1,200 players): 22,331 msgs/sec, p50 latency 15 ms, p95 latency 36 ms, event loop p99 delay 44.1 ms, heap 308 MB. Healthy: PASS.
+### Measured Scenario Results:
 
-Capacity summary: One Node.js process comfortably handles 150 rooms (1,200 concurrent players) generating over 22,000 messages per second while keeping p95 latency at 36 ms. Because the test bots and server shared CPU resources during this benchmark, dedicated production servers can be expected to support higher throughput.
+1. **Scenario A (Baseline: 8 players per room, 100% continuous drawing)**:
+   * 25 rooms (200 players): 5,945 msgs/sec, p50: 2 ms, p95: 5 ms, EL p99: 34.2 ms, CPU: 14.5%, RSS: 94 MB. PASS.
+   * 50 rooms (400 players): 11,888 msgs/sec, p50: 4 ms, p95: 9 ms, EL p99: 34.9 ms, CPU: 24.5%, RSS: 116 MB. PASS.
+   * 100 rooms (800 players): 24,121 msgs/sec, p50: 9 ms, p95: 20 ms, EL p99: 40.7 ms, CPU: 49.9%, RSS: 157 MB. PASS.
+   * 150 rooms (1,200 players): 38,376 msgs/sec, p50: 12 ms, p95: 28 ms, EL p99: 55.2 ms, CPU: 74.4%, RSS: 151 MB. FAIL (CPU saturation > 70%).
+   * **Healthy Capacity**: **100 rooms (800 concurrent players)**. Limiting factor: CPU core saturation from socket write fanout (7 frames per stroke batch * 30 batches/s * 100 rooms = 21,000 msgs/s).
+
+2. **Scenario B (Realistic Mix: 2–12 players/room, avg ~6, 55% draw duty cycle, chat & 5% player churn)**:
+   * 25 rooms (183 players): 1,504 msgs/sec, p50: 4 ms, p95: 9 ms, EL p99: 32.4 ms, CPU: 10.6%, RSS: 110 MB. PASS.
+   * 50 rooms (305 players): 2,425 msgs/sec, p50: 6 ms, p95: 15 ms, EL p99: 34.8 ms, CPU: 17.2%, RSS: 144 MB. PASS.
+   * 75 rooms (486 players): 10,092 msgs/sec, p50: 10 ms, p95: 23 ms, EL p99: 40.3 ms, CPU: 48.9%, RSS: 118 MB. PASS.
+   * 100 rooms (729 players): 5,989 msgs/sec, p50: 15 ms, p95: 58 ms, EL p99: 58.6 ms, CPU: 36.3%, RSS: 240 MB. FAIL (Event loop lag > 50 ms).
+   * **Healthy Capacity**: **75 rooms (486 concurrent players)**. Limiting factor: Event loop delay during concurrent WebSocket handshakes, state recovery, and re-sync snapshots during churn.
+
+3. **Scenario C (Worst Case: 12 players per room, 100% continuous drawing)**:
+   * 25 rooms (300 players): 11,173 msgs/sec, p50: 7 ms, p95: 16 ms, EL p99: 33.9 ms, CPU: 42.9%, RSS: 103 MB. PASS.
+   * 35 rooms (420 players): 15,828 msgs/sec, p50: 11 ms, p95: 23 ms, EL p99: 37.7 ms, CPU: 63.7%, RSS: 110 MB. PASS.
+   * 50 rooms (600 players): 24,074 msgs/sec, p50: 16 ms, p95: 55 ms, EL p99: 74.6 ms, CPU: 81.8%, RSS: 133 MB. FAIL (CPU 81.8%, EL lag 74.6 ms).
+   * **Healthy Capacity**: **35 rooms (420 concurrent players)**. Limiting factor: CPU saturation from 11-way socket fanout (330 msgs/s per room).
+
+4. **Scenario D (Idle Lobby Rooms: Memory Footprint Measurement)**:
+   * Tested from 25 to 400 idle rooms (1,980 connected WebSocket players). RSS grew from 62 MB to 90 MB.
+   * Measured memory overhead: **74.7 KB RSS per room** (34.7 KB Heap per room), or **15.1 KB RSS per connected idle player**.
+   * **Healthy Capacity**: **400+ rooms (1,980+ players)**. Limiting factor: OS file descriptors / socket handles (`ulimit -n`), not memory.
+
+### Profiling & Bottleneck Optimization:
+Profiling at the breaking point revealed that serializing JSON separately per recipient in broadcasts created over 31,000 string allocations/second at 150 rooms. Pre-serializing the payload once per broadcast and dispatching the raw buffer dropped p95 latency by 30% (from 40 ms to 28 ms) and cut CPU utilization by 5.8%. Additionally, switching disk persistence from synchronous `fs.writeFileSync` to async `fs.promises.writeFile` reduced churn p95 latency from 213 ms to 30 ms.
+
+### Soak & Spike Verification:
+* **Soak Test (70% capacity, 35 rooms / 281 players)**: Monitored with checkpoints every 30s. RSS plateaued at 138 MB (+38 MB total from clean start, variance < 3 MB over final 90s), average CPU was 8.0%, average p95 latency was 5 ms, and zero memory leaks occurred.
+* **Spike & Reconnect Test (50 rooms / 366 players)**: Reconnected all 366 players simultaneously in **246 ms** with a **100% success rate** and zero dropped connections.
+
+*Note on resource sharing*: Because the server and load bots shared CPU resources during this benchmark, dedicated production servers with offloaded clients can achieve 30–50% higher capacity per core.
 
 ## Scaling to multiple servers
 

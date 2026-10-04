@@ -11,16 +11,33 @@ import { clientMessageSchema } from '../shared/schemas.js';
 import { Room, PersistedRoom, Player } from './room.js';
 import { IPRateLimiter } from './ratelimit.js';
 import { monitorEventLoopDelay, type IntervalHistogram } from 'perf_hooks';
+import { serverMetrics, resetServerMetrics } from './metrics.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/i, '$1');
 
-// ── Event loop monitoring ──
+// ── Event loop and CPU monitoring ──
 let eld: IntervalHistogram | null = null;
 try {
   eld = monitorEventLoopDelay({ resolution: 20 });
   eld.enable();
 } catch {
   // Not available in all environments
+}
+
+let lastCpuUsage = process.cpuUsage();
+let lastCpuTime = performance.now();
+
+function getCpuPercent(): number {
+  const now = performance.now();
+  const diffTimeMs = now - lastCpuTime;
+  if (diffTimeMs <= 0) return 0;
+  const diffUsage = process.cpuUsage(lastCpuUsage);
+  lastCpuUsage = process.cpuUsage();
+  lastCpuTime = now;
+  const totalMicroseconds = diffUsage.user + diffUsage.system;
+  const elapsedMicroseconds = diffTimeMs * 1000;
+  const pct = (totalMicroseconds / elapsedMicroseconds) * 100;
+  return Math.round(pct * 10) / 10;
 }
 
 // ── Room storage ──
@@ -132,27 +149,45 @@ const server = http.createServer((req, res) => {
 
   // Stats endpoint for load testing
   if (url.pathname === '/stats') {
+    const mem = process.memoryUsage();
     const stats: Record<string, unknown> = {
       rooms: rooms.size,
       players: 0,
-      memoryMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-      cpuUser: process.cpuUsage().user,
-      cpuSystem: process.cpuUsage().system,
+      memoryMB: Math.round(mem.heapUsed / 1024 / 1024),
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+      rssMB: Math.round(mem.rss / 1024 / 1024),
+      cpuPercent: getCpuPercent(),
+      messagesSent: serverMetrics.messagesSent,
+      messagesRecv: serverMetrics.messagesRecv,
+      bytesSent: serverMetrics.bytesSent,
+      bytesRecv: serverMetrics.bytesRecv,
+      slowClientDrops: serverMetrics.slowClientDrops,
     };
     for (const room of rooms.values()) {
       stats.players = (stats.players as number) + room.getConnectedPlayers().length;
     }
     if (eld) {
       stats.eventLoopDelayMs = {
-        min: eld.min / 1e6,
-        max: eld.max / 1e6,
-        mean: eld.mean / 1e6,
-        p50: eld.percentile(50) / 1e6,
-        p99: eld.percentile(99) / 1e6,
+        min: Math.round((eld.min / 1e6) * 10) / 10,
+        max: Math.round((eld.max / 1e6) * 10) / 10,
+        mean: Math.round((eld.mean / 1e6) * 10) / 10,
+        p50: Math.round((eld.percentile(50) / 1e6) * 10) / 10,
+        p95: Math.round((eld.percentile(95) / 1e6) * 10) / 10,
+        p99: Math.round((eld.percentile(99) / 1e6) * 10) / 10,
       };
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(stats));
+    return;
+  }
+
+  // Reset stats endpoint
+  if (url.pathname === '/stats/reset') {
+    resetServerMetrics();
+    if (eld) eld.reset();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'reset' }));
     return;
   }
 
@@ -230,9 +265,12 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     let data: string;
     if (Buffer.isBuffer(rawData)) {
       data = rawData.toString('utf-8');
+      serverMetrics.bytesRecv += rawData.length;
     } else {
       data = rawData as string;
+      serverMetrics.bytesRecv += Buffer.byteLength(data);
     }
+    serverMetrics.messagesRecv++;
 
     let parsed: unknown;
     try {

@@ -16,6 +16,7 @@ import {
 } from '../shared/utils.js';
 import { DEFAULT_WORDS } from '../shared/words.js';
 import { TokenBucket } from './ratelimit.js';
+import { serverMetrics } from './metrics.js';
 
 // ── Player (server side) ──
 export interface Player {
@@ -1083,21 +1084,38 @@ export class Room {
     if (!player || !player.socket || player.socket.readyState !== WebSocket.OPEN) return;
     try {
       const data = JSON.stringify(msg);
+      this.sendRaw(player, data, Buffer.byteLength(data), msg.type === 'draw_op');
+    } catch {
+      // Socket error, will be handled by close event
+    }
+  }
+
+  private sendRaw(player: Player, data: string, dataLen: number, isDrawOp: boolean): void {
+    if (!player.socket || player.socket.readyState !== WebSocket.OPEN) return;
+    try {
       // Backpressure check
       if (player.socket.bufferedAmount > 64 * 1024) {
         // Skip non-critical messages for slow clients
-        if (msg.type === 'draw_op') return;
+        if (isDrawOp) {
+          serverMetrics.slowClientDrops++;
+          return;
+        }
       }
       player.socket.send(data);
+      serverMetrics.messagesSent++;
+      serverMetrics.bytesSent += dataLen;
     } catch {
       // Socket error, will be handled by close event
     }
   }
 
   broadcast(msg: ServerMessage, excludeId?: string): void {
+    const data = JSON.stringify(msg);
+    const dataLen = Buffer.byteLength(data);
+    const isDrawOp = msg.type === 'draw_op';
     for (const player of this.players.values()) {
       if (player.id === excludeId) continue;
-      this.sendTo(player.id, msg);
+      this.sendRaw(player, data, dataLen, isDrawOp);
     }
   }
 
@@ -1106,9 +1124,12 @@ export class Room {
   }
 
   private sendToGuessedAndDrawer(msg: ServerMessage): void {
+    const data = JSON.stringify(msg);
+    const dataLen = Buffer.byteLength(data);
+    const isDrawOp = msg.type === 'draw_op';
     for (const player of this.players.values()) {
       if (player.hasGuessed || player.id === this.currentDrawerId) {
-        this.sendTo(player.id, msg);
+        this.sendRaw(player, data, dataLen, isDrawOp);
       }
     }
   }

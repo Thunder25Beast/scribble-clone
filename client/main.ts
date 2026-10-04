@@ -518,10 +518,28 @@ function renderWordDisplay(): void {
       const me = state.players.find(p => p.id === playerId);
       if (me?.hasGuessed) {
         const guessedWord = (window as any)._guessedWord;
-        el.textContent = guessedWord ? `Word: ${guessedWord} (Guessed!)` : `${state.wordMask || ''} (Guessed!)`;
+        if (guessedWord) {
+          el.textContent = `Word: ${guessedWord} (Guessed!)`;
+        } else {
+          const wordParts = (state.wordMask || '').split(/\s{3,}/);
+          const wordHtml = wordParts
+            .map(part => `<span class="word-group">${escapeHtml(part)}</span>`)
+            .join('<span class="word-gap"></span>');
+          el.innerHTML = `${wordHtml} <span class="word-count">(Guessed!)</span>`;
+        }
       } else if (state.wordMask) {
-        const lettersCount = state.wordMask.split(' ').filter(c => c && c !== '-' && c !== '').length;
-        el.textContent = `${state.wordMask} (${lettersCount})`;
+        // Multi-word separation: split on 3 or more spaces between words
+        const wordParts = state.wordMask.split(/\s{3,}/);
+        const wordLengths = wordParts.map(part => {
+          return part.split(' ').filter(c => c && c !== '-' && c !== ' ').length;
+        });
+        const lengthBadge = `(${wordLengths.join(', ')})`;
+
+        const wordHtml = wordParts
+          .map(part => `<span class="word-group">${escapeHtml(part)}</span>`)
+          .join('<span class="word-gap"></span>');
+
+        el.innerHTML = `${wordHtml} <span class="word-count">${lengthBadge}</span>`;
       } else {
         el.textContent = '...';
       }

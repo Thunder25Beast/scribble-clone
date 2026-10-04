@@ -66,38 +66,34 @@ export function generateMask(word: string): string {
 // revealCount: how many letters to reveal total (cumulative)
 // Returns updated mask string
 export function revealHint(word: string, currentMask: string, revealCount: number): string {
-  // Parse current mask to find which positions are still hidden
   const chars = word.split('');
-  const maskParts = currentMask.split(' ');
+  const maskChars: string[] = [];
   const hiddenPositions: number[] = [];
 
   for (let i = 0; i < chars.length; i++) {
-    if (maskParts[i] === '_') {
+    const ch = currentMask[i * 2] || (/[a-zA-Z0-9]/.test(chars[i]) ? '_' : chars[i]);
+    maskChars.push(ch);
+    if (/[a-zA-Z0-9]/.test(chars[i]) && ch === '_') {
       hiddenPositions.push(i);
     }
   }
 
-  // How many already revealed
-  const alreadyRevealed = chars.length - hiddenPositions.length -
-    chars.filter(ch => !/[a-zA-Z0-9]/.test(ch)).length;
+  const alreadyRevealed = chars.filter(ch => /[a-zA-Z0-9]/.test(ch)).length - hiddenPositions.length;
   const toReveal = Math.max(0, revealCount - alreadyRevealed);
 
   if (toReveal <= 0 || hiddenPositions.length === 0) return currentMask;
 
-  // Pick random positions to reveal (deterministic with a seed would be better,
-  // but server controls this so it is fine)
   const shuffled = [...hiddenPositions];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  const newMaskParts = [...maskParts];
   for (let k = 0; k < Math.min(toReveal, shuffled.length); k++) {
-    newMaskParts[shuffled[k]] = chars[shuffled[k]];
+    maskChars[shuffled[k]] = chars[shuffled[k]];
   }
 
-  return newMaskParts.join(' ');
+  return maskChars.join(' ');
 }
 
 // ── Compute hint schedule ──

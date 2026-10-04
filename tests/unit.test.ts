@@ -85,6 +85,25 @@ describe('Unit Tests: Hint Schedule and Word Masking', () => {
     const fullWord = 'cat';
     const revealedAll = 'c a t';
     assert.equal(revealHint(fullWord, revealedAll, 5), revealedAll);
+
+    // Multi-word phrase hints preserve 3-space gaps and alignment
+    const multiWord = 'ice cream';
+    let multiMask = generateMask(multiWord);
+    assert.equal(multiMask, '_ _ _   _ _ _ _ _');
+    multiMask = revealHint(multiWord, multiMask, 2);
+    // Must keep exactly 3 spaces between the two words
+    assert.ok(multiMask.includes('   '), 'Must retain 3 spaces between words');
+    const revealedMultiCount = multiMask.split(' ').filter(ch => ch && ch !== '_').length;
+    assert.equal(revealedMultiCount, 2, 'Should reveal exactly 2 letters in multi-word phrase');
+
+    // Hyphenated word hints preserve hyphens
+    const hyphenWord = 't-shirt';
+    let hyphenMask = generateMask(hyphenWord);
+    assert.equal(hyphenMask, '_ - _ _ _ _ _');
+    hyphenMask = revealHint(hyphenWord, hyphenMask, 2);
+    assert.ok(hyphenMask.includes('-'), 'Must retain hyphen');
+    const revealedHyphenCount = hyphenMask.split(' ').filter(ch => ch && ch !== '_' && ch !== '-').length;
+    assert.equal(revealedHyphenCount, 2, 'Should reveal exactly 2 letters in hyphenated word');
   });
 });
 

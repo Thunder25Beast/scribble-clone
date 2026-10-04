@@ -392,10 +392,32 @@ select.input {
 .word-display {
   font-size: 1.6rem;
   font-weight: 700;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
   color: var(--text-primary);
   text-align: center;
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.word-group {
+  display: inline-block;
+  letter-spacing: 4px;
+  white-space: nowrap;
+}
+.word-gap {
+  display: inline-block;
+  width: 28px;
+}
+.word-count {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--accent-secondary, #a29bfe);
+  letter-spacing: 1px;
+  margin-left: 8px;
+  white-space: nowrap;
 }
 .timer-display {
   font-size: 1.2rem;
@@ -867,6 +889,16 @@ select.input {
     font-size: clamp(1rem, 2.5vw, 1.35rem);
     letter-spacing: 1.5px;
   }
+  .word-group {
+    letter-spacing: 3px;
+  }
+  .word-gap {
+    width: 20px;
+  }
+  .word-count {
+    margin-left: 6px;
+    font-size: 0.8em;
+  }
   .timer-display {
     font-size: 1rem;
     gap: 4px;
@@ -1023,6 +1055,16 @@ select.input {
   .word-display {
     font-size: 0.95rem;
     letter-spacing: 1px;
+  }
+  .word-group {
+    letter-spacing: 2px;
+  }
+  .word-gap {
+    width: 14px;
+  }
+  .word-count {
+    margin-left: 4px;
+    font-size: 0.75em;
   }
   .round-info {
     font-size: 0.75rem;

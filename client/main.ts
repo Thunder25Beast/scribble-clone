@@ -828,8 +828,12 @@ function renderCompletedStroke(stroke: CompletedStroke, context: CanvasRendering
   context.lineCap = 'round';
   context.lineJoin = 'round';
   context.moveTo(stroke.points[0].x, stroke.points[0].y);
-  for (let i = 1; i < stroke.points.length; i++) {
-    context.lineTo(stroke.points[i].x, stroke.points[i].y);
+  if (stroke.points.length === 1) {
+    context.lineTo(stroke.points[0].x, stroke.points[0].y);
+  } else {
+    for (let i = 1; i < stroke.points.length; i++) {
+      context.lineTo(stroke.points[i].x, stroke.points[i].y);
+    }
   }
   context.stroke();
 }
@@ -1089,9 +1093,23 @@ brushSlider.addEventListener('input', () => {
 });
 
 // Undo
-$('btn-undo').addEventListener('click', () => {
+function performUndo(): void {
   if (!isDrawer || state?.phase !== 'DRAWING') return;
   send({ type: 'draw_op', op: { type: 'undo' } });
+}
+
+$('btn-undo').addEventListener('click', performUndo);
+
+// Keyboard shortcut: Ctrl+Z / Cmd+Z to undo
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  const target = e.target as HTMLElement;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    performUndo();
+  }
 });
 
 // Clear

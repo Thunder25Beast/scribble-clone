@@ -494,6 +494,42 @@ describe('Integration Tests: Real WebSocket Clients and Server Authority', () =>
     await client2.close();
   });
 
+  it('allows host to restart game in same room and return to lobby', async () => {
+    const roomId = await createRoom();
+    const host = new TestClient();
+    const guest = new TestClient();
+    await host.connect();
+    await guest.connect();
+
+    host.send({ type: 'join', roomId, name: 'HostUser' });
+    await host.waitFor(m => m.type === 'joined');
+    guest.send({ type: 'join', roomId, name: 'GuestUser' });
+    await guest.waitFor(m => m.type === 'joined');
+    await host.waitFor(m => m.type === 'player_joined');
+
+    // Host starts game
+    host.send({ type: 'start_game' });
+    await host.waitFor(m => m.type === 'phase_change' && (m as any).phase === 'CHOOSING_WORD');
+    await guest.waitFor(m => m.type === 'phase_change' && (m as any).phase === 'CHOOSING_WORD');
+
+    // Host restarts game mid-turn
+    host.send({ type: 'restart_game' });
+    const restartedMsg = await guest.waitFor(
+      m => m.type === 'chat' && (m as any).text.includes('restarted the game')
+    );
+    assert.ok(restartedMsg, 'Guest received restart announcement');
+
+    // Host returns to lobby
+    host.send({ type: 'return_to_lobby' });
+    const lobbyMsgHost = await host.waitFor(m => m.type === 'phase_change' && (m as any).phase === 'LOBBY') as any;
+    const lobbyMsgGuest = await guest.waitFor(m => m.type === 'phase_change' && (m as any).phase === 'LOBBY') as any;
+    assert.equal(lobbyMsgHost.phase, 'LOBBY');
+    assert.equal(lobbyMsgGuest.phase, 'LOBBY');
+
+    await host.close();
+    await guest.close();
+  });
+
   it('recovers room state from disk after server restart', async () => {
     const roomId = await createRoom();
     const p1 = new TestClient();

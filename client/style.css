@@ -318,6 +318,23 @@ select.input {
   font-size: 0.8rem;
   font-weight: 600;
 }
+.player-choosing {
+  color: var(--accent-warning);
+  font-size: 0.8rem;
+  font-weight: 600;
+  animation: pulseChoosing 1.5s ease-in-out infinite;
+}
+@keyframes pulseChoosing {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.lobby-note {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 8px;
+  text-align: center;
+}
 
 .hidden {
   display: none !important;
@@ -343,6 +360,34 @@ select.input {
   color: var(--text-secondary);
   font-size: 0.9rem;
   font-weight: 600;
+}
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.host-game-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-tiny {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.btn-outline:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+  background: var(--bg-card);
 }
 .word-display {
   font-size: 1.6rem;
@@ -606,6 +651,48 @@ select.input {
   box-shadow: 0 4px 20px rgba(108, 92, 231, 0.4);
 }
 
+.word-choice-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+}
+.choice-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.canvas-banner {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 15, 26, 0.92);
+  color: #FFFFFF;
+  padding: 10px 24px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-primary);
+  font-size: 1.15rem;
+  font-weight: 700;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+  pointer-events: none;
+  animation: bannerPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes bannerPop {
+  from { opacity: 0; transform: translate(-50%, -10px) scale(0.9); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
 /* ── Game end / replay ── */
 .end-container {
   max-width: 900px;
@@ -680,6 +767,21 @@ select.input {
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--accent-secondary);
+}
+
+.end-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+.end-waiting-text {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-top: 16px;
+  font-style: italic;
 }
 
 /* ── Reconnect banner ── */

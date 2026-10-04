@@ -164,6 +164,14 @@ export interface C2S_NewGame {
   type: 'new_game';
 }
 
+export interface C2S_RestartGame {
+  type: 'restart_game';
+}
+
+export interface C2S_ReturnToLobby {
+  type: 'return_to_lobby';
+}
+
 export type ClientMessage =
   | C2S_Join
   | C2S_UpdateSettings
@@ -173,7 +181,9 @@ export type ClientMessage =
   | C2S_Chat
   | C2S_Ping
   | C2S_Resync
-  | C2S_NewGame;
+  | C2S_NewGame
+  | C2S_RestartGame
+  | C2S_ReturnToLobby;
 
 // ── Messages: Server to Client ──
 

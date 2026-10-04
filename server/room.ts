@@ -204,6 +204,12 @@ export class Room {
       player.disconnectTimer = null;
     }
 
+    // Cancel drawer leave timer if this is the drawer returning
+    if (this.drawerLeaveTimer && player.id === this.currentDrawerId) {
+      clearTimeout(this.drawerLeaveTimer);
+      this.drawerLeaveTimer = null;
+    }
+
     player.socket = socket;
     player.isConnected = true;
     player.name = name; // allow name update on reconnect
@@ -403,11 +409,109 @@ export class Room {
     return true;
   }
 
-  startNewGame(playerId: string): boolean {
+  restartGame(playerId: string): boolean {
     const player = this.players.get(playerId);
     if (!player || !player.isHost) return false;
-    if (this.phase !== 'GAME_END') return false;
-    return this.startGame(playerId);
+
+    const connected = this.getConnectedPlayers();
+    if (connected.length < CONFIG.MIN_PLAYERS_TO_START) return false;
+
+    // Validate custom words if needed
+    if (this.settings.wordListMode === 'custom' && this.settings.customWords.length < CONFIG.MIN_CUSTOM_WORDS) {
+      return false;
+    }
+
+    this.clearPhaseTimers();
+
+    // Reset game state
+    this.currentRound = 1;
+    this.usedWords = [];
+    this.allTurnReplays = [];
+    this.currentWord = null;
+    this.wordMask = null;
+    this.drawSeq = 0;
+    this.activeStack = [];
+    this.opLog = [];
+    this.currentStroke.clear();
+    this.turnReplayOps = [];
+
+    for (const p of this.players.values()) {
+      p.score = 0;
+      p.hasGuessed = false;
+    }
+
+    // Build turn order: connected players in join order
+    this.turnOrder = connected
+      .sort((a, b) => a.joinOrder - b.joinOrder)
+      .map(p => p.id);
+    this.currentTurnIndex = 0;
+
+    this.broadcast({
+      type: 'score_update',
+      scores: this.getScoresMap(),
+    });
+
+    this.broadcast({
+      type: 'chat',
+      playerId: 'system',
+      playerName: 'System',
+      text: `${player.name} restarted the game!`,
+      isSystem: true,
+      isPrivate: false,
+    });
+
+    this.persist();
+    this.startChoosingWord();
+    return true;
+  }
+
+  returnToLobby(playerId: string): boolean {
+    const player = this.players.get(playerId);
+    if (!player || !player.isHost) return false;
+
+    this.clearPhaseTimers();
+
+    this.phase = 'LOBBY';
+    this.currentDrawerId = null;
+    this.currentWord = null;
+    this.wordMask = null;
+    this.currentRound = 1;
+    this.drawSeq = 0;
+    this.activeStack = [];
+    this.opLog = [];
+    this.currentStroke.clear();
+    this.turnReplayOps = [];
+
+    for (const p of this.players.values()) {
+      p.score = 0;
+      p.hasGuessed = false;
+    }
+
+    this.broadcast({
+      type: 'phase_change',
+      phase: 'LOBBY',
+    });
+
+    this.broadcast({
+      type: 'score_update',
+      scores: this.getScoresMap(),
+    });
+
+    this.broadcast({
+      type: 'chat',
+      playerId: 'system',
+      playerName: 'System',
+      text: `${player.name} returned the room to the lobby.`,
+      isSystem: true,
+      isPrivate: false,
+    });
+
+    this.persist();
+    return true;
+  }
+
+  startNewGame(playerId: string): boolean {
+    return this.restartGame(playerId);
   }
 
   private startChoosingWord(): void {
@@ -449,6 +553,11 @@ export class Room {
       return;
     }
 
+    // Reset guess flags
+    for (const p of this.players.values()) {
+      p.hasGuessed = false;
+    }
+
     this.phase = 'CHOOSING_WORD';
     const endsAt = Date.now() + CONFIG.CHOOSING_TIME * 1000;
 
@@ -486,10 +595,11 @@ export class Room {
   chooseWord(playerId: string, word: string): boolean {
     if (this.phase !== 'CHOOSING_WORD') return false;
     if (playerId !== this.currentDrawerId) return false;
-    if (!this.wordChoices.includes(word)) return false;
+    const match = this.wordChoices.find(w => w.trim().toLowerCase() === word.trim().toLowerCase());
+    if (!match) return false;
 
     this.clearPhaseTimers();
-    this.startDrawing(word);
+    this.startDrawing(match);
     return true;
   }
 

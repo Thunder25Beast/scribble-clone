@@ -105,6 +105,14 @@ const newGameSchema = z.object({
   type: z.literal('new_game'),
 });
 
+const restartGameSchema = z.object({
+  type: z.literal('restart_game'),
+});
+
+const returnToLobbySchema = z.object({
+  type: z.literal('return_to_lobby'),
+});
+
 export const clientMessageSchema = z.discriminatedUnion('type', [
   joinSchema,
   updateSettingsSchema,
@@ -115,4 +123,6 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   pingSchema,
   resyncSchema,
   newGameSchema,
+  restartGameSchema,
+  returnToLobbySchema,
 ]);

@@ -101,7 +101,7 @@ function connect(): void {
 
     // If we have a room and token, rejoin
     if (roomId && playerToken) {
-      const savedName = localStorage.getItem(`name_${roomId}`) || 'Player';
+      const savedName = sessionStorage.getItem(`name_${roomId}`) || 'Player';
       send({ type: 'join', roomId, name: savedName, token: playerToken });
     }
 
@@ -178,10 +178,14 @@ function handleServerMessage(msg: ServerMessage): void {
       playerToken = msg.token;
       state = msg.state;
       roomId = msg.state.roomId;
-      // Persist token and name
-      localStorage.setItem(`token_${roomId}`, playerToken);
-      localStorage.setItem(`name_${roomId}`, '');
+      // Persist token and name in sessionStorage for this tab
+      sessionStorage.setItem(`token_${roomId}`, playerToken);
+      const myPlayer = state.players.find(p => p.id === playerId);
+      if (myPlayer?.name) {
+        sessionStorage.setItem(`name_${roomId}`, myPlayer.name);
+      }
       renderState();
+      updateChatInputState();
       break;
 
     case 'error':
@@ -192,13 +196,20 @@ function handleServerMessage(msg: ServerMessage): void {
       if (state) {
         state.players.push(msg.player);
         renderPlayerList();
+        renderLobbySettings();
+        addChatMessage('', `${msg.player.name} joined the room.`, true, false);
       }
       break;
 
     case 'player_left':
       if (state) {
+        const leftPlayer = state.players.find(p => p.id === msg.playerId);
         state.players = state.players.filter(p => p.id !== msg.playerId);
         renderPlayerList();
+        renderLobbySettings();
+        if (leftPlayer) {
+          addChatMessage('', `${leftPlayer.name} left the room.`, true, false);
+        }
       }
       break;
 
@@ -260,11 +271,17 @@ function handleServerMessage(msg: ServerMessage): void {
       break;
 
     case 'correct_guess':
-      addChatMessage('', `${msg.playerName} guessed the word!`, false, false, 'correct');
+      if (msg.playerId === playerId) {
+        addChatMessage('', 'You guessed the word!', false, false, 'correct');
+      } else {
+        addChatMessage('', `${msg.playerName} guessed the word!`, false, false, 'correct');
+      }
       if (state) {
         const p = state.players.find(p => p.id === msg.playerId);
         if (p) p.hasGuessed = true;
         renderPlayerList();
+        renderWordDisplay();
+        updateChatInputState();
       }
       break;
 
@@ -312,34 +329,49 @@ function handlePhaseChange(msg: any): void {
     case 'CHOOSING_WORD':
       showScreen('game');
       clearCanvas(ctx);
+      drawing = false;
+      (window as any)._drawerWord = null;
+      (window as any)._guessedWord = null;
+
       if (isDrawer && msg.wordChoices) {
         showWordChoices(msg.wordChoices);
+        $('word-display').textContent = 'Choose a secret word!';
       } else {
-        hideWordChoices();
-        addChatMessage('', `${msg.drawerName || 'Someone'} is choosing a word...`, true, false);
+        const drawerName = msg.drawerName || state.players.find(p => p.id === msg.drawerId)?.name || 'Someone';
+        showWaitingForWordChoice(drawerName);
+        addChatMessage('', `${drawerName} is choosing a word...`, true, false);
+        $('word-display').textContent = 'Choosing a word...';
       }
       $('toolbar').classList.add('hidden');
       startTimer(msg.endsAt);
-      renderWordDisplay();
       renderPlayerList();
+      updateChatInputState();
       break;
 
     case 'DRAWING':
       showScreen('game');
       hideWordChoices();
+      drawing = false;
+      const drawerName = msg.drawerName || state.players.find(p => p.id === msg.drawerId)?.name || 'Someone';
+
       if (isDrawer) {
         $('toolbar').classList.remove('hidden');
-        // Drawer sees the word
         if (msg.word) {
-          $('word-display').textContent = msg.word;
+          (window as any)._drawerWord = msg.word;
+          (state as any).currentWord = msg.word;
+          $('word-display').textContent = `Word: ${msg.word}`;
         }
+        showCanvasBanner('You are drawing!');
       } else {
         $('toolbar').classList.add('hidden');
+        showCanvasBanner(`${drawerName} is drawing now!`);
+        addChatMessage('', `${drawerName} is drawing now!`, true, false);
       }
       startTimer(msg.endsAt);
       renderWordDisplay();
       renderPlayerList();
       updateRoundDisplay();
+      updateChatInputState();
       break;
 
     case 'TURN_END':
@@ -347,30 +379,47 @@ function handlePhaseChange(msg: any): void {
       hideWordChoices();
       drawing = false;
       if (msg.word) {
+        (window as any)._drawerWord = null;
+        (window as any)._guessedWord = msg.word;
         $('word-display').textContent = `The word was: ${msg.word}`;
+        addChatMessage('', `Turn ended! The word was "${msg.word}".`, true, false);
+        showCanvasBanner(`Turn ended! The word was: ${msg.word}`, 4000);
       }
       stopTimer();
       renderPlayerList();
+      updateChatInputState();
       break;
 
     case 'GAME_END':
+      $('toolbar').classList.add('hidden');
+      hideWordChoices();
       state.turnReplays = msg.turnReplays || [];
       showGameEnd();
       stopTimer();
+      updateChatInputState();
       break;
 
     case 'WAITING':
+      $('toolbar').classList.add('hidden');
+      hideWordChoices();
       addChatMessage('', 'Waiting for more players...', true, false);
       stopTimer();
+      updateChatInputState();
       break;
 
     case 'LOBBY':
+      $('toolbar').classList.add('hidden');
+      hideWordChoices();
+      clearCanvas(ctx);
       showScreen('lobby');
       renderLobbySettings();
       renderPlayerList();
       stopTimer();
+      updateChatInputState();
+      updateHostControls();
       break;
   }
+  updateHostControls();
 }
 
 // ── Rendering ──
@@ -400,6 +449,7 @@ function renderState(): void {
   renderPlayerList();
   renderWordDisplay();
   updateRoundDisplay();
+  updateHostControls();
 }
 
 function renderPlayerList(): void {
@@ -418,7 +468,9 @@ function renderPlayerList(): void {
     const hostBadge = p.isHost ? '<span class="player-host-badge">HOST</span>' : '';
     const scoreHtml = isGame ? `<span class="player-score">${p.score}</span>` : '';
     const statusHtml = p.id === state!.currentDrawerId && isGame
-      ? '<span class="player-drawing">Drawing</span>'
+      ? (state!.phase === 'CHOOSING_WORD'
+          ? '<span class="player-choosing">Choosing...</span>'
+          : '<span class="player-drawing">Drawing</span>')
       : (p.hasGuessed && isGame && state!.phase === 'DRAWING'
         ? '<span class="player-guessed">Guessed!</span>' : '');
     const meClass = p.id === playerId ? ' style="font-weight:700"' : '';
@@ -429,15 +481,45 @@ function renderPlayerList(): void {
       ${hostBadge}${statusHtml}${scoreHtml}
     </li>`;
   }).join('');
+
+  updateHostControls();
 }
 
 function renderWordDisplay(): void {
   if (!state) return;
   const el = $('word-display');
-  if (state.phase === 'DRAWING' && !isDrawer && state.wordMask) {
-    el.textContent = state.wordMask;
-  } else if (state.phase === 'CHOOSING_WORD') {
-    if (!isDrawer) el.textContent = '...';
+
+  if (state.phase === 'CHOOSING_WORD') {
+    el.textContent = isDrawer ? 'Choose a secret word!' : 'Choosing a word...';
+    return;
+  }
+
+  if (state.phase === 'DRAWING') {
+    if (isDrawer) {
+      const word = (window as any)._drawerWord || (state as any).currentWord || '';
+      el.textContent = word ? `Word: ${word}` : 'Drawing';
+    } else {
+      const me = state.players.find(p => p.id === playerId);
+      if (me?.hasGuessed) {
+        const guessedWord = (window as any)._guessedWord || (state as any).currentWord;
+        el.textContent = guessedWord ? `Word: ${guessedWord} (Guessed!)` : `${state.wordMask || ''} (Guessed!)`;
+      } else if (state.wordMask) {
+        const lettersCount = state.wordMask.split(' ').filter(c => c && c !== '-' && c !== '').length;
+        el.textContent = `${state.wordMask} (${lettersCount})`;
+      } else {
+        el.textContent = '...';
+      }
+    }
+    return;
+  }
+
+  if (state.phase === 'TURN_END') {
+    // Keep turn end display
+    return;
+  }
+
+  if (state.phase === 'LOBBY') {
+    el.textContent = '';
   }
 }
 
@@ -457,6 +539,7 @@ function renderLobbySettings(): void {
   const customWordsEl = $('setting-custom-words') as HTMLTextAreaElement;
   const startBtn = $('btn-start-game') as HTMLButtonElement;
   const customArea = $('custom-words-area');
+  const minPlayersMsg = $('lobby-min-players-msg');
 
   roundsEl.value = String(state.settings.rounds);
   drawTimeEl.value = String(state.settings.drawTime);
@@ -470,14 +553,21 @@ function renderLobbySettings(): void {
     customArea.classList.add('hidden');
   }
 
+  const connectedCount = state.players.filter(p => p.isConnected).length;
+  const canStart = isHost && connectedCount >= 2;
+
   // Enable/disable based on host
   roundsEl.disabled = !isHost;
   drawTimeEl.disabled = !isHost;
   wordModeEl.disabled = !isHost;
   customWordsEl.disabled = !isHost;
-  startBtn.disabled = !isHost || state.players.filter(p => p.isConnected).length < 2;
+  startBtn.disabled = !canStart;
   startBtn.classList.toggle('hidden', !isHost);
   $('host-only-badge').classList.toggle('hidden', isHost);
+
+  if (minPlayersMsg) {
+    minPlayersMsg.classList.toggle('hidden', !isHost || connectedCount >= 2);
+  }
 }
 
 function setupShareLink(): void {
@@ -485,11 +575,34 @@ function setupShareLink(): void {
   ($('share-url') as HTMLInputElement).value = url;
 }
 
-// ── Word choices ──
+// ── Word choices and banners ──
+let bannerTimeout: ReturnType<typeof setTimeout> | null = null;
+function showCanvasBanner(text: string, durationMs = 2500): void {
+  const banner = $('canvas-banner');
+  if (!banner) return;
+  if (bannerTimeout) {
+    clearTimeout(bannerTimeout);
+    bannerTimeout = null;
+  }
+  banner.textContent = text;
+  banner.classList.remove('hidden');
+  bannerTimeout = setTimeout(() => {
+    banner.classList.add('hidden');
+    bannerTimeout = null;
+  }, durationMs);
+}
+
 function showWordChoices(words: string[]): void {
   const overlay = $('word-choice-overlay');
+  const title = $('word-choice-title');
   const container = $('word-choices');
+  const waiting = $('word-choice-waiting');
+
   overlay.classList.remove('hidden');
+  if (title) title.textContent = 'Choose a secret word:';
+  container.classList.remove('hidden');
+  if (waiting) waiting.classList.add('hidden');
+
   container.innerHTML = words.map(w =>
     `<button class="word-choice-btn">${escapeHtml(w)}</button>`
   ).join('');
@@ -497,13 +610,87 @@ function showWordChoices(words: string[]): void {
   container.querySelectorAll('.word-choice-btn').forEach((btn, i) => {
     btn.addEventListener('click', () => {
       send({ type: 'choose_word', word: words[i] });
-      overlay.classList.add('hidden');
+      hideWordChoices();
     });
   });
 }
 
+function showWaitingForWordChoice(drawerName: string): void {
+  const overlay = $('word-choice-overlay');
+  const title = $('word-choice-title');
+  const container = $('word-choices');
+  const waiting = $('word-choice-waiting');
+  const waitingText = $('word-choice-waiting-text');
+
+  overlay.classList.remove('hidden');
+  if (title) title.textContent = `${drawerName} is choosing a word...`;
+  container.classList.add('hidden');
+  if (waiting) waiting.classList.remove('hidden');
+  if (waitingText) waitingText.textContent = `Please wait while ${drawerName} picks a word`;
+}
+
 function hideWordChoices(): void {
   $('word-choice-overlay').classList.add('hidden');
+  $('word-choices').classList.add('hidden');
+  const waiting = $('word-choice-waiting');
+  if (waiting) waiting.classList.add('hidden');
+}
+
+function updateChatInputState(): void {
+  const input = $('chat-input') as HTMLInputElement;
+  const sendBtn = $('btn-send-chat') as HTMLButtonElement;
+  if (!input) return;
+
+  if (!state || state.phase === 'LOBBY') {
+    input.placeholder = 'Chat in lobby...';
+    input.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+    return;
+  }
+
+  if (state.phase === 'CHOOSING_WORD') {
+    if (isDrawer) {
+      input.placeholder = 'Choose a word above...';
+    } else {
+      const drawer = state.players.find(p => p.id === state?.currentDrawerId);
+      input.placeholder = `Waiting for ${drawer?.name || 'drawer'} to choose...`;
+    }
+    input.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+    return;
+  }
+
+  if (state.phase === 'DRAWING') {
+    if (isDrawer) {
+      input.placeholder = 'You are drawing! Chat with players who guessed...';
+      input.disabled = false;
+      if (sendBtn) sendBtn.disabled = false;
+    } else {
+      const me = state.players.find(p => p.id === playerId);
+      if (me?.hasGuessed) {
+        input.placeholder = 'You guessed the word! Chat here...';
+      } else {
+        input.placeholder = 'Type your guess here...';
+      }
+      input.disabled = false;
+      if (sendBtn) sendBtn.disabled = false;
+    }
+    return;
+  }
+
+  if (state.phase === 'TURN_END') {
+    input.placeholder = 'Turn ended! Chat...';
+    input.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+    return;
+  }
+
+  if (state.phase === 'GAME_END') {
+    input.placeholder = 'Game over! Chat...';
+    input.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+    return;
+  }
 }
 
 // ── Timer ──
@@ -801,6 +988,9 @@ canvas.addEventListener('pointerup', (e: PointerEvent) => {
   if (!drawing || !isDrawer) return;
   e.preventDefault();
   drawing = false;
+  try {
+    canvas.releasePointerCapture(e.pointerId);
+  } catch {}
 
   // Send remaining points
   if (pointBatchBuffer.length > 0) {
@@ -948,17 +1138,13 @@ function checkUrlRoom(): void {
   const match = location.pathname.match(/\/r\/([A-Za-z0-9_-]+)/);
   if (match) {
     roomId = match[1];
-    // Check for saved token
-    const savedToken = localStorage.getItem(`token_${roomId}`);
-    if (savedToken) {
+    // Check for saved token in this tab
+    const savedToken = sessionStorage.getItem(`token_${roomId}`);
+    const savedName = sessionStorage.getItem(`name_${roomId}`) || '';
+    if (savedToken && savedName) {
       playerToken = savedToken;
-      // Try to reconnect with saved name
-      const savedName = localStorage.getItem(`name_${roomId}`) || '';
-      if (savedName) {
-        connect();
-        send({ type: 'join', roomId, name: savedName, token: playerToken });
-        return;
-      }
+      connect();
+      return;
     }
     showScreen('name');
   }
@@ -971,7 +1157,7 @@ $('btn-enter').addEventListener('click', () => {
     $('name-error').textContent = 'Name must be 1 to 20 characters';
     return;
   }
-  localStorage.setItem(`name_${roomId}`, name);
+  sessionStorage.setItem(`name_${roomId}`, name);
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     connect();
     // Wait for connection, then join
@@ -1017,10 +1203,39 @@ $('btn-copy-link').addEventListener('click', () => {
   });
 });
 
-// ── Game end / New game ──
+// ── Room restart & Lobby controls ──
 $('btn-new-game').addEventListener('click', () => {
-  send({ type: 'new_game' });
+  send({ type: 'restart_game' });
 });
+
+$('btn-return-lobby').addEventListener('click', () => {
+  send({ type: 'return_to_lobby' });
+});
+
+$('btn-topbar-restart').addEventListener('click', () => {
+  send({ type: 'restart_game' });
+});
+
+$('btn-topbar-lobby').addEventListener('click', () => {
+  send({ type: 'return_to_lobby' });
+});
+
+function updateHostControls(): void {
+  if (!state) return;
+  const isHost = state.players.find(p => p.id === playerId)?.isHost || false;
+
+  const topbarControls = $('host-game-controls');
+  if (topbarControls) {
+    topbarControls.classList.toggle('hidden', !isHost || state.phase === 'LOBBY' || state.phase === 'GAME_END');
+  }
+
+  const endRestartBtn = $('btn-new-game');
+  const endLobbyBtn = $('btn-return-lobby');
+  const endWaitingMsg = $('end-waiting-host');
+  if (endRestartBtn) endRestartBtn.classList.toggle('hidden', !isHost);
+  if (endLobbyBtn) endLobbyBtn.classList.toggle('hidden', !isHost);
+  if (endWaitingMsg) endWaitingMsg.classList.toggle('hidden', isHost);
+}
 
 function showGameEnd(): void {
   if (!state) return;
@@ -1037,9 +1252,7 @@ function showGameEnd(): void {
     </div>
   `).join('');
 
-  // Show/hide new game button for host only
-  const isHost = state.players.find(p => p.id === playerId)?.isHost || false;
-  $('btn-new-game').classList.toggle('hidden', !isHost);
+  updateHostControls();
 
   // Set up replay
   setupReplay(state.turnReplays || []);
@@ -1159,5 +1372,7 @@ function escapeHtml(s: string): string {
 }
 
 // ── Init ──
-connect();
 checkUrlRoom();
+if (!roomId) {
+  connect();
+}

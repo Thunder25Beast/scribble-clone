@@ -405,8 +405,15 @@ function handleMessage(room: Room, player: Player, msg: Exclude<import('../share
       break;
 
     case 'new_game':
-      if (!room.startNewGame(player.id)) {
-        room.sendTo(player.id, { type: 'error', message: 'Cannot start new game' });
+    case 'restart_game':
+      if (!room.restartGame(player.id)) {
+        room.sendTo(player.id, { type: 'error', message: 'Cannot restart game' });
+      }
+      break;
+
+    case 'return_to_lobby':
+      if (!room.returnToLobby(player.id)) {
+        room.sendTo(player.id, { type: 'error', message: 'Cannot return to lobby' });
       }
       break;
 

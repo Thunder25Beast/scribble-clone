@@ -75,6 +75,7 @@
             </label>
           </div>
           <button id="btn-start-game" class="btn btn-primary btn-start">Start Game</button>
+          <p id="lobby-min-players-msg" class="lobby-note hidden">Waiting for at least 1 more player to join (2 players needed)</p>
         </div>
         <div class="lobby-players">
           <h3>Players</h3>
@@ -89,7 +90,13 @@
     <div class="game-layout">
       <!-- Top bar -->
       <div class="game-topbar">
-        <div class="round-info">Round <span id="round-current">1</span> / <span id="round-total">3</span></div>
+        <div class="topbar-left">
+          <div class="round-info">Round <span id="round-current">1</span> / <span id="round-total">3</span></div>
+          <div id="host-game-controls" class="host-game-controls hidden">
+            <button id="btn-topbar-restart" class="btn btn-tiny btn-outline" title="Restart game in this room">Restart</button>
+            <button id="btn-topbar-lobby" class="btn btn-tiny btn-outline" title="Return room to lobby">Lobby</button>
+          </div>
+        </div>
         <div class="word-display" id="word-display"></div>
         <div class="timer-display">
           <span id="timer-value">80</span>s
@@ -109,9 +116,15 @@
           <canvas id="game-canvas" width="800" height="600"></canvas>
           <!-- Word choice overlay -->
           <div id="word-choice-overlay" class="overlay hidden">
-            <h3>Choose a word:</h3>
+            <h3 id="word-choice-title">Choose a word:</h3>
             <div id="word-choices" class="word-choices"></div>
+            <div id="word-choice-waiting" class="word-choice-waiting hidden">
+              <div class="choice-spinner"></div>
+              <p id="word-choice-waiting-text">Waiting for drawer to choose a word...</p>
+            </div>
           </div>
+          <!-- Turn notification banner -->
+          <div id="canvas-banner" class="canvas-banner hidden"></div>
           <!-- Toolbar (visible for drawer) -->
           <div id="toolbar" class="toolbar hidden">
             <div class="tool-group">
@@ -167,7 +180,11 @@
         <canvas id="replay-canvas" width="800" height="600"></canvas>
         <p id="replay-word" class="replay-word"></p>
       </div>
-      <button id="btn-new-game" class="btn btn-primary">New Game</button>
+      <div class="end-actions">
+        <button id="btn-new-game" class="btn btn-primary">Play Again (Restart)</button>
+        <button id="btn-return-lobby" class="btn btn-secondary">Return to Lobby</button>
+      </div>
+      <p id="end-waiting-host" class="end-waiting-text hidden">Waiting for host to restart or return to lobby...</p>
     </div>
   </div>
 

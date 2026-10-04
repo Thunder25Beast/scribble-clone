@@ -841,30 +841,203 @@ select.input {
   border-radius: 3px;
 }
 
-/* ── Responsive ── */
+/* ── Responsive Design for All Devices ── */
+
+/* Tablet & Split-Screen Desktop (e.g. side-by-side browser windows 700px - 900px) */
 @media (max-width: 900px) {
   .lobby-content {
     grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .game-topbar {
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .topbar-left {
+    gap: 6px;
+  }
+  .round-info {
+    font-size: 0.8rem;
+  }
+  .btn-tiny {
+    padding: 3px 6px;
+    font-size: 0.7rem;
+  }
+  .word-display {
+    font-size: clamp(1rem, 2.5vw, 1.35rem);
+    letter-spacing: 1.5px;
+  }
+  .timer-display {
+    font-size: 1rem;
+    gap: 4px;
   }
   .game-sidebar-left {
-    width: 140px;
+    width: 125px;
+    padding: 6px 4px;
+  }
+  .game-sidebar-left .player-list li {
+    padding: 5px 6px;
+    font-size: 0.78rem;
+    gap: 4px;
+  }
+  .game-sidebar-left .player-name {
+    max-width: 65px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .game-sidebar-right {
-    width: 200px;
+    width: 190px;
+  }
+  .chat-messages {
+    font-size: 0.82rem;
+    padding: 6px;
+    gap: 4px;
+  }
+  .chat-input-area {
+    padding: 6px;
+    gap: 4px;
+  }
+  .chat-input-area .input {
+    font-size: 0.82rem;
+    padding: 6px 8px;
+  }
+  .toolbar {
+    padding: 4px 6px;
+    gap: 6px;
+  }
+  .tool-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 0.95rem;
+  }
+  .slider {
+    width: 65px;
+  }
+  .color-swatch {
+    width: 18px;
+    height: 18px;
   }
 }
-@media (max-width: 600px) {
-  .game-sidebar-left {
-    display: none;
-  }
-  .game-sidebar-right {
-    width: 100%;
-    max-height: 200px;
-  }
+
+/* Mobile & Portrait Tablet Devices (under 680px) */
+@media (max-width: 680px) {
   .game-main {
     flex-direction: column;
   }
+  /* Horizontal scrollable player badge row above canvas */
+  .game-sidebar-left {
+    width: 100%;
+    height: auto;
+    max-height: 46px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 4px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 0;
+  }
+  .game-sidebar-left .player-list {
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    align-items: center;
+    white-space: nowrap;
+  }
+  .game-sidebar-left .player-list li {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 3px 8px;
+    margin-bottom: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    font-size: 0.75rem;
+    gap: 4px;
+  }
+  .game-sidebar-left .player-name {
+    max-width: 80px;
+  }
+  .canvas-area {
+    flex: 1;
+    min-height: 0;
+    padding: 4px;
+  }
+  #game-canvas, #replay-canvas {
+    max-height: calc(100% - 46px);
+  }
+  .toolbar {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .color-palette {
+    display: flex;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    max-width: calc(100vw - 160px);
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .color-swatch {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+  }
+  .game-sidebar-right {
+    width: 100%;
+    height: 180px;
+    min-height: 120px;
+    max-height: 220px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .lobby-container {
+    padding: 16px 12px;
+  }
+  .end-container {
+    padding: 16px 12px;
+  }
+  .replay-controls {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+
+/* Small Smartphone Screens (under 480px) */
+@media (max-width: 480px) {
   .logo {
-    font-size: 2.5rem;
+    font-size: 2.2rem;
+  }
+  .card {
+    padding: 20px 16px;
+    width: 95%;
+  }
+  .game-topbar {
+    padding: 4px 8px;
+    min-height: 42px;
+    gap: 4px;
+  }
+  .word-display {
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+  }
+  .round-info {
+    font-size: 0.75rem;
+  }
+  .timer-display {
+    font-size: 0.9rem;
+  }
+  .game-sidebar-right {
+    height: 150px;
+  }
+  .tool-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .slider {
+    width: 50px;
   }
 }

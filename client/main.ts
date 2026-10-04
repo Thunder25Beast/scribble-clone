@@ -275,6 +275,8 @@ function handleServerMessage(msg: ServerMessage): void {
     case 'correct_guess':
       if (msg.playerId === playerId) {
         addChatMessage('', 'You guessed the word!', false, false, 'correct');
+        const guessed = msg.word || (window as any)._lastGuess || '';
+        if (guessed) (window as any)._guessedWord = guessed;
       } else {
         addChatMessage('', `${msg.playerName} guessed the word!`, false, false, 'correct');
       }
@@ -334,6 +336,11 @@ function handlePhaseChange(msg: any): void {
       drawing = false;
       (window as any)._drawerWord = null;
       (window as any)._guessedWord = null;
+      (window as any)._turnEndWord = null;
+      (window as any)._lastGuess = null;
+      (state as any).currentWord = null;
+      state.wordMask = '';
+      state.players.forEach(p => { p.hasGuessed = false; });
 
       if (isDrawer && msg.wordChoices) {
         showWordChoices(msg.wordChoices);
@@ -353,7 +360,12 @@ function handlePhaseChange(msg: any): void {
     case 'DRAWING':
       showScreen('game');
       hideWordChoices();
+      clearCanvas(ctx);
       drawing = false;
+      (window as any)._guessedWord = null;
+      (window as any)._turnEndWord = null;
+      (window as any)._lastGuess = null;
+      state.players.forEach(p => { p.hasGuessed = false; });
       const drawerName = msg.drawerName || state.players.find(p => p.id === msg.drawerId)?.name || 'Someone';
 
       if (isDrawer) {
@@ -366,6 +378,8 @@ function handlePhaseChange(msg: any): void {
         showCanvasBanner('You are drawing!');
       } else {
         $('toolbar').classList.add('hidden');
+        (window as any)._drawerWord = null;
+        (state as any).currentWord = null;
         showCanvasBanner(`${drawerName} is drawing now!`);
         addChatMessage('', `${drawerName} is drawing now!`, true, false);
       }
@@ -382,7 +396,7 @@ function handlePhaseChange(msg: any): void {
       drawing = false;
       if (msg.word) {
         (window as any)._drawerWord = null;
-        (window as any)._guessedWord = msg.word;
+        (window as any)._turnEndWord = msg.word;
         $('word-display').textContent = `The word was: ${msg.word}`;
         addChatMessage('', `Turn ended! The word was "${msg.word}".`, true, false);
         showCanvasBanner(`Turn ended! The word was: ${msg.word}`, 4000);
@@ -503,7 +517,7 @@ function renderWordDisplay(): void {
     } else {
       const me = state.players.find(p => p.id === playerId);
       if (me?.hasGuessed) {
-        const guessedWord = (window as any)._guessedWord || (state as any).currentWord;
+        const guessedWord = (window as any)._guessedWord;
         el.textContent = guessedWord ? `Word: ${guessedWord} (Guessed!)` : `${state.wordMask || ''} (Guessed!)`;
       } else if (state.wordMask) {
         const lettersCount = state.wordMask.split(' ').filter(c => c && c !== '-' && c !== '').length;
@@ -516,7 +530,10 @@ function renderWordDisplay(): void {
   }
 
   if (state.phase === 'TURN_END') {
-    // Keep turn end display
+    const word = (window as any)._turnEndWord;
+    if (word) {
+      el.textContent = `The word was: ${word}`;
+    }
     return;
   }
 
@@ -1036,6 +1053,23 @@ canvas.addEventListener('pointerleave', (e: PointerEvent) => {
   }
 });
 
+canvas.addEventListener('pointercancel', (e: PointerEvent) => {
+  if (drawing && isDrawer) {
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {}
+    if (pointBatchBuffer.length > 0) {
+      send({
+        type: 'draw_op',
+        op: { type: 'stroke_points', id: localStrokeId, points: [...pointBatchBuffer] }
+      });
+      pointBatchBuffer = [];
+    }
+    send({ type: 'draw_op', op: { type: 'stroke_end', id: localStrokeId } });
+    drawing = false;
+  }
+});
+
 // ── Toolbar ──
 
 // Color palette
@@ -1124,6 +1158,7 @@ function sendChat(): void {
   const input = $('chat-input') as HTMLInputElement;
   const text = input.value.trim();
   if (!text) return;
+  (window as any)._lastGuess = text;
   send({ type: 'chat', text });
   input.value = '';
 }

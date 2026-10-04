@@ -4,7 +4,7 @@ A real time multiplayer drawing and guessing browser game inspired by Skribbl.io
 
 ## Quick Start: The One Command
 
-Run the following command from inside the `q1` folder:
+Run the following command from the repository root:
 
 ```bash
 npm install && npm start

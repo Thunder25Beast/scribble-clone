@@ -83,9 +83,11 @@ function getCanvasScale(): { scaleX: number; scaleY: number; offsetX: number; of
 
 function pointerToLogical(e: PointerEvent): Point {
   const s = getCanvasScale();
+  const rawX = (e.clientX - s.offsetX) * s.scaleX;
+  const rawY = (e.clientY - s.offsetY) * s.scaleY;
   return {
-    x: Math.round((e.clientX - s.offsetX) * s.scaleX),
-    y: Math.round((e.clientY - s.offsetY) * s.scaleY),
+    x: Math.max(0, Math.min(CANVAS_W - 1, Math.round(rawX))),
+    y: Math.max(0, Math.min(CANVAS_H - 1, Math.round(rawY))),
   };
 }
 
@@ -747,6 +749,7 @@ function applyDrawOp(op: DrawOp, context: CanvasRenderingContext2D): void {
     case 'stroke_start':
       context.beginPath();
       context.moveTo(op.point.x, op.point.y);
+      context.lineTo(op.point.x, op.point.y);
       context.strokeStyle = op.tool === 'eraser' ? '#FFFFFF' : op.color;
       context.lineWidth = op.size;
       context.lineCap = 'round';
@@ -856,12 +859,19 @@ function floodFillCanvas(
   const targetB = imageData[idx + 2];
   const targetA = imageData[idx + 3];
 
-  if (targetR === fillColor.r && targetG === fillColor.g &&
-      targetB === fillColor.b && targetA === fillColor.a) return;
+  // If target color is already filled, nothing to do
+  const tolSq = 32 * 32;
+  const fillDiff = (targetR - fillColor.r) ** 2 + (targetG - fillColor.g) ** 2 +
+                   (targetB - fillColor.b) ** 2 + (targetA - fillColor.a) ** 2;
+  if (fillDiff <= tolSq) return;
 
-  const matchesTarget = (i: number) =>
-    imageData[i] === targetR && imageData[i + 1] === targetG &&
-    imageData[i + 2] === targetB && imageData[i + 3] === targetA;
+  const matchesTarget = (i: number) => {
+    const dr = imageData[i] - targetR;
+    const dg = imageData[i + 1] - targetG;
+    const db = imageData[i + 2] - targetB;
+    const da = imageData[i + 3] - targetA;
+    return (dr * dr + dg * dg + db * db + da * da) <= tolSq;
+  };
 
   const setPixel = (i: number) => {
     imageData[i] = fillColor.r;
@@ -958,12 +968,14 @@ canvas.addEventListener('pointermove', (e: PointerEvent) => {
   e.preventDefault();
 
   const pt = pointerToLogical(e);
+  const prev = localStrokePoints[localStrokePoints.length - 1];
+  if (prev && prev.x === pt.x && prev.y === pt.y) return; // skip redundant identical points
+
   localStrokePoints.push(pt);
   pointBatchBuffer.push(pt);
 
   // Optimistic render
   ctx.beginPath();
-  const prev = localStrokePoints[localStrokePoints.length - 2];
   ctx.moveTo(prev.x, prev.y);
   ctx.lineTo(pt.x, pt.y);
   ctx.strokeStyle = currentTool === 'eraser' ? '#FFFFFF' : currentColor;
@@ -1080,8 +1092,6 @@ brushSlider.addEventListener('input', () => {
 $('btn-undo').addEventListener('click', () => {
   if (!isDrawer || state?.phase !== 'DRAWING') return;
   send({ type: 'draw_op', op: { type: 'undo' } });
-  // We need to request a fresh snapshot since we can't undo locally reliably
-  send({ type: 'resync', lastSeq: 0 });
 });
 
 // Clear

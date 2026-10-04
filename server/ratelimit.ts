@@ -32,10 +32,10 @@ export class TokenBucket {
   private refill(): void {
     const now = Date.now();
     const elapsed = now - this.lastRefill;
-    if (elapsed >= this.intervalMs) {
-      const refills = Math.floor(elapsed / this.intervalMs);
-      this.tokens = Math.min(this.maxTokens, this.tokens + refills * this.maxTokens);
-      this.lastRefill = now - (elapsed % this.intervalMs);
+    if (elapsed > 0) {
+      const addedTokens = (elapsed / this.intervalMs) * this.maxTokens;
+      this.tokens = Math.min(this.maxTokens, this.tokens + addedTokens);
+      this.lastRefill = now;
     }
   }
 }

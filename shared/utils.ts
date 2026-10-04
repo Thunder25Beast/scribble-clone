@@ -157,19 +157,19 @@ export function floodFill(
   const targetB = imageData[idx + 2];
   const targetA = imageData[idx + 3];
 
-  // If target color is same as fill color, nothing to do
-  if (
-    targetR === fillColor.r &&
-    targetG === fillColor.g &&
-    targetB === fillColor.b &&
-    targetA === fillColor.a
-  ) return;
+  // If target color is already filled, nothing to do
+  const tolSq = 32 * 32;
+  const fillDiff = (targetR - fillColor.r) ** 2 + (targetG - fillColor.g) ** 2 +
+                   (targetB - fillColor.b) ** 2 + (targetA - fillColor.a) ** 2;
+  if (fillDiff <= tolSq) return;
 
-  const matchesTarget = (i: number): boolean =>
-    imageData[i] === targetR &&
-    imageData[i + 1] === targetG &&
-    imageData[i + 2] === targetB &&
-    imageData[i + 3] === targetA;
+  const matchesTarget = (i: number): boolean => {
+    const dr = imageData[i] - targetR;
+    const dg = imageData[i + 1] - targetG;
+    const db = imageData[i + 2] - targetB;
+    const da = imageData[i + 3] - targetA;
+    return (dr * dr + dg * dg + db * db + da * da) <= tolSq;
+  };
 
   const setPixel = (i: number): void => {
     imageData[i] = fillColor.r;

@@ -736,11 +736,22 @@ export class Room {
         if (this.activeStack.length > 0) {
           this.activeStack.pop();
         }
-        break;
+        // Broadcast authoritative snapshot to all clients so everyone clears and redraws identically
+        this.broadcast({
+          type: 'snapshot',
+          items: this.activeStack,
+          nextSeq: this.drawSeq + 1,
+        });
+        return true;
       }
       case 'clear': {
         this.activeStack = [];
-        break;
+        this.broadcast({
+          type: 'draw_op',
+          seq,
+          op,
+        });
+        return true;
       }
     }
 
@@ -757,10 +768,9 @@ export class Room {
   handleResync(playerId: string, lastSeq: number): void {
     if (lastSeq >= this.drawSeq) return; // up to date
 
-    // If too far behind, send snapshot
+    // If requesting from scratch (0) or too far behind (>100 ops), send snapshot
     const missingOps = this.opLog.filter(o => o.seq > lastSeq);
-    if (missingOps.length > 100) {
-      // Send snapshot instead
+    if (lastSeq === 0 || missingOps.length > 100) {
       this.sendTo(playerId, {
         type: 'snapshot',
         items: this.activeStack,

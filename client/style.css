@@ -454,8 +454,12 @@ select.input {
   background: white;
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
+  aspect-ratio: 4 / 3;
+  width: auto;
+  height: auto;
   max-width: 100%;
-  max-height: calc(100% - 56px);
+  max-height: 100%;
+  object-fit: contain;
   touch-action: none;
   cursor: crosshair;
 }

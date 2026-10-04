@@ -51,8 +51,8 @@ export const CONFIG = {
 
   // Rate limits (token bucket)
   CHAT_RATE: { tokens: 5, intervalMs: 3000 },
-  DRAW_MSG_RATE: { tokens: 60, intervalMs: 1000 },
-  DRAW_POINTS_RATE: { tokens: 2000, intervalMs: 1000 },
+  DRAW_MSG_RATE: { tokens: 300, intervalMs: 1000 },
+  DRAW_POINTS_RATE: { tokens: 10000, intervalMs: 1000 },
   JOIN_RATE_PER_IP: { tokens: parseInt(process.env.JOIN_RATE_LIMIT || '10', 10), intervalMs: 60000 },
   ROOM_CREATE_RATE_PER_IP: { tokens: parseInt(process.env.ROOM_CREATE_RATE_LIMIT || '5', 10), intervalMs: 60000 },
 

@@ -349,6 +349,12 @@ describe('Integration Tests: Real WebSocket Clients and Server Authority', () =>
     assert.equal(reconnectedJoin.playerId, p2.playerId, 'Reconnected socket is rebound to same player');
     assert.equal(reconnectedJoin.state.players.find((p: any) => p.id === p2.playerId)?.score, 0);
 
+    // p1 receives player_reconnected and NOT another player_joined
+    const p1ReconnectedMsg = await p1.waitFor(m => m.type === 'player_reconnected') as any;
+    assert.equal(p1ReconnectedMsg.playerId, p2.playerId);
+    const p1JoinedMsgs = p1.messages.filter(m => m.type === 'player_joined');
+    assert.equal(p1JoinedMsgs.length, 1, 'p1 must not receive duplicate player_joined on reconnect');
+
     // Now disconnect p2Reconnected and wait for grace period (1200ms) to expire
     await p2Reconnected.close();
     await new Promise(r => setTimeout(r, 1400));

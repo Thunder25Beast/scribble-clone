@@ -196,10 +196,18 @@ function handleServerMessage(msg: ServerMessage): void {
 
     case 'player_joined':
       if (state) {
-        state.players.push(msg.player);
+        const pNameLower = msg.player.name.trim().toLowerCase();
+        const existingIdx = state.players.findIndex(
+          p => p.id === msg.player.id || p.name.trim().toLowerCase() === pNameLower
+        );
+        if (existingIdx >= 0) {
+          state.players[existingIdx] = { ...state.players[existingIdx], ...msg.player, isConnected: true };
+        } else {
+          state.players.push(msg.player);
+          addChatMessage('', `${msg.player.name} joined the room.`, true, false);
+        }
         renderPlayerList();
         renderLobbySettings();
-        addChatMessage('', `${msg.player.name} joined the room.`, true, false);
       }
       break;
 
@@ -226,7 +234,10 @@ function handleServerMessage(msg: ServerMessage): void {
     case 'player_reconnected':
       if (state) {
         const p = state.players.find(p => p.id === msg.playerId);
-        if (p) p.isConnected = true;
+        if (p) {
+          p.isConnected = true;
+          addChatMessage('', `${p.name} reconnected.`, true, false);
+        }
         renderPlayerList();
       }
       break;
@@ -474,8 +485,21 @@ function renderPlayerList(): void {
   const isGame = state.phase !== 'LOBBY';
   const listEl = isGame ? $('game-player-list') : $('lobby-player-list');
 
+  // Deduplicate players by id and name
+  const uniquePlayers: PlayerInfo[] = [];
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  for (const p of state.players) {
+    const normName = p.name.trim().toLowerCase();
+    if (!seenIds.has(p.id) && !seenNames.has(normName)) {
+      seenIds.add(p.id);
+      seenNames.add(normName);
+      uniquePlayers.push(p);
+    }
+  }
+
   // Sort by score (descending) for game, join order for lobby
-  const sorted = [...state.players].sort((a, b) =>
+  const sorted = [...uniquePlayers].sort((a, b) =>
     isGame ? b.score - a.score : 0
   );
 

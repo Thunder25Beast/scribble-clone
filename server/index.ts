@@ -335,11 +335,12 @@ function handleJoin(ws: WebSocket, msg: { type: 'join'; roomId: string; name: st
     return;
   }
 
-  const player = room.addPlayer(name, ws, msg.token);
-  if (!player) {
+  const result = room.addPlayer(name, ws, msg.token);
+  if (!result) {
     ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));
     return;
   }
+  const { player, isReconnect } = result;
 
   socketPlayerMap.set(ws, { roomId: room.roomId, playerId: player.id });
 
@@ -373,18 +374,20 @@ function handleJoin(ws: WebSocket, msg: { type: 'join'; roomId: string; name: st
     }));
   }
 
-  // Notify other players
-  room.broadcastExcept(player.id, {
-    type: 'player_joined',
-    player: {
-      id: player.id,
-      name: player.name,
-      score: player.score,
-      isHost: player.isHost,
-      isConnected: true,
-      hasGuessed: player.hasGuessed,
-    },
-  });
+  // Notify other players if new player (reconnects are already handled via player_reconnected)
+  if (!isReconnect) {
+    room.broadcastExcept(player.id, {
+      type: 'player_joined',
+      player: {
+        id: player.id,
+        name: player.name,
+        score: player.score,
+        isHost: player.isHost,
+        isConnected: true,
+        hasGuessed: player.hasGuessed,
+      },
+    });
+  }
 
   // Check if we can resume from WAITING
   room.checkResumeFromWaiting();

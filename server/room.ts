@@ -160,13 +160,21 @@ export class Room {
 
   // ── Player management ──
 
-  addPlayer(name: string, socket: WebSocket, existingToken?: string): Player | null {
-    // Check for reconnect
+  addPlayer(name: string, socket: WebSocket, existingToken?: string): { player: Player; isReconnect: boolean } | null {
+    // Check for reconnect with token
     if (existingToken) {
       for (const player of this.players.values()) {
         if (player.token === existingToken) {
-          return this.reconnectPlayer(player, socket, name);
+          return { player: this.reconnectPlayer(player, socket, name), isReconnect: true };
         }
+      }
+    }
+
+    // Gracefully reclaim session if disconnected player with same name rejoins
+    const trimmedLowerName = name.trim().toLowerCase();
+    for (const player of this.players.values()) {
+      if (!player.isConnected && player.name.trim().toLowerCase() === trimmedLowerName) {
+        return { player: this.reconnectPlayer(player, socket, name), isReconnect: true };
       }
     }
 
@@ -189,7 +197,7 @@ export class Room {
 
     this.players.set(id, player);
     this.persist();
-    return player;
+    return { player, isReconnect: false };
   }
 
   private reconnectPlayer(player: Player, socket: WebSocket, name: string): Player {

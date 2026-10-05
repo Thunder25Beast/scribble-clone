@@ -2,6 +2,11 @@
 
 A real time multiplayer drawing and guessing browser game inspired by Skribbl.io. The server acts as the single source of truth for all game mechanics, turns, scoring, drawing streams, and chat verification.
 
+## Live Demo
+
+Play the live multiplayer game in your browser:
+**[https://scribble-clone-o3mx.onrender.com/](https://scribble-clone-o3mx.onrender.com/)**
+
 ## Quick Start: The One Command
 
 Run the following command from the repository root:

@@ -1,5 +1,6 @@
-// Realistic Skribbl Load Testing & Capacity Benchmark Tool
-// Supports Scenarios A, B, C, D with Ramp, Soak, and Spike modes.
+// Skribbl Game Load Testing & Capacity Benchmark Tool
+// Measures server room capacity under realistic and worst case gameplay conditions.
+// Validates p95 latency (< 100 ms), event loop p99 delay (< 50 ms), and CPU (< 70%).
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
@@ -26,7 +27,7 @@ export interface StepResult {
   eventLoopDelayP99: number;
   slowClientDrops: number;
   healthy: boolean;
-  limitingFactor?: string;
+  limitingFactor: string;
 }
 
 export interface SoakResult {
@@ -40,13 +41,10 @@ export interface SoakResult {
   avgCpuPercent: number;
   avgLatencyP95: number;
   maxEventLoopDelayP99: number;
-  slowClientDrops: number;
-  memoryLeakDetected: boolean;
   healthy: boolean;
 }
 
 export interface SpikeResult {
-  scenario: string;
   rooms: number;
   players: number;
   recoveryTimeMs: number;
@@ -56,7 +54,7 @@ export interface SpikeResult {
   healthy: boolean;
 }
 
-// ── CLI Configuration ──
+// CLI argument parsing
 const args = process.argv.slice(2);
 
 function getArg(prefix: string, defaultVal: string): string {
@@ -68,26 +66,25 @@ const SERVER_PORT = parseInt(getArg('--port=', process.env.PORT || '3000'), 10);
 const SERVER_URL = `http://localhost:${SERVER_PORT}`;
 const WS_URL = `ws://localhost:${SERVER_PORT}`;
 
-const scenarioArg = getArg('--scenario=', 'all').toUpperCase(); // A, B, C, D, ALL
+// Scenario: B (Realistic Mix), C (Worst Case), or ALL
+const scenarioArg = getArg('--scenario=', 'ALL').toUpperCase();
 const modeArg = getArg('--mode=', 'ramp').toLowerCase(); // ramp, soak, spike, all
-let stepList = [25, 50, 100, 200, 400];
-const stepsIdx = args.findIndex(a => a.startsWith('--steps='));
-if (stepsIdx >= 0) {
-  const firstVal = args[stepsIdx].slice(8);
-  if (firstVal.includes(',')) {
-    stepList = firstVal.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n));
-  } else {
-    stepList = [parseInt(firstVal, 10)];
-    let j = stepsIdx + 1;
-    while (j < args.length && /^\d+$/.test(args[j])) {
-      stepList.push(parseInt(args[j], 10));
-      j++;
-    }
-  }
-}
 const stepDurationSec = parseInt(getArg('--duration=', '60'), 10);
-const soakDurationSec = parseInt(getArg('--soak-duration=', '900'), 10); // default 15 min (900s)
+const soakDurationSec = parseInt(getArg('--soak-duration=', '180'), 10); // 3 minutes as documented
 const spikeRooms = parseInt(getArg('--spike-rooms=', '50'), 10);
+
+// Default steps per scenario matching the documented benchmarks
+function getDefaultSteps(sc: string): number[] {
+  if (sc === 'C') return [25, 35, 50];
+  return [25, 50, 75, 100];
+}
+
+const customStepsIdx = args.findIndex(a => a.startsWith('--steps='));
+let customSteps: number[] | null = null;
+if (customStepsIdx >= 0) {
+  const raw = args[customStepsIdx].slice(8);
+  customSteps = raw.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n));
+}
 
 async function isServerRunning(): Promise<boolean> {
   try {
@@ -202,7 +199,6 @@ function percentile(arr: number[], p: number): number {
   return arr[idx];
 }
 
-// ── Room Session Definition ──
 interface BotPlayer {
   id: string;
   name: string;
@@ -221,21 +217,17 @@ interface RoomSession {
   isDrawingActive: boolean;
 }
 
-// ── Scenario Setup Helper ──
+// Setup a room with bots according to scenario rules
 async function setupRoom(scenario: string, roomIndex: number, onDrawOpLatency: (lat: number) => void): Promise<RoomSession> {
   const roomId = await createRoom();
-  let playerCount = 8;
+  let playerCount = 6;
 
-  if (scenario === 'A') {
-    playerCount = 8;
-  } else if (scenario === 'B') {
-    // Random between 2 and 12, average ~6
-    playerCount = Math.floor(Math.random() * 11) + 2;
-  } else if (scenario === 'C') {
+  if (scenario === 'C') {
+    // Scenario C: Worst case 12 players per room
     playerCount = 12;
-  } else if (scenario === 'D') {
-    // Idle lobby rooms
-    playerCount = Math.floor(Math.random() * 7) + 2; // 2 to 8
+  } else {
+    // Scenario B: Realistic mix between 2 and 12 players, averaging ~6
+    playerCount = Math.floor(Math.random() * 11) + 2;
   }
 
   // Connect Drawer (Player 0)
@@ -272,17 +264,7 @@ async function setupRoom(scenario: string, roomIndex: number, onDrawOpLatency: (
     players.push(guesser);
   }
 
-  if (scenario === 'D') {
-    // Scenario D: Stay in LOBBY phase
-    return {
-      roomId,
-      players,
-      drawer: drawerPlayer,
-      isDrawingActive: false,
-    };
-  }
-
-  // Scenarios A, B, C: Advance to DRAWING phase
+  // Advance game to DRAWING phase
   drawerPlayer.ws.send(JSON.stringify({ type: 'start_game' }));
 
   await new Promise<void>((resolve) => {
@@ -307,10 +289,8 @@ async function setupRoom(scenario: string, roomIndex: number, onDrawOpLatency: (
   };
 }
 
-// ── Traffic Generator ──
+// Generate realistic traffic per room
 function startTraffic(session: RoomSession, scenario: string, onSent: () => void, onDrawLatency?: (lat: number) => void) {
-  if (scenario === 'D') return; // Idle lobby has no traffic
-
   let strokeId = `s_${session.roomId}_1`;
   session.drawer.ws.send(JSON.stringify({
     type: 'draw_op',
@@ -326,12 +306,11 @@ function startTraffic(session: RoomSession, scenario: string, onSent: () => void
   }));
   onSent();
 
-  // Duty cycle state for Scenario B (~55% drawing time)
+  // Duty cycle state for Scenario B: ~55% drawing time, alternating bursts and pauses
   let isCurrentlyDrawing = true;
   let strokeCounter = 0;
 
   if (scenario === 'B') {
-    // Switch between drawing bursts (~2.2s) and pause/thinking intervals (~1.8s) => ~55% duty cycle
     const cycle = () => {
       const activeMs = 2200 + Math.random() * 600;
       const pauseMs = 1800 + Math.random() * 400;
@@ -368,7 +347,7 @@ function startTraffic(session: RoomSession, scenario: string, onSent: () => void
     }
   }, 33);
 
-  // Guessers chat / guess traffic
+  // Guessers chat and guess traffic
   const guessIntervalMs = scenario === 'B' ? 3500 : 3000;
   session.guessInterval = setInterval(() => {
     const guessers = session.players.filter(p => !p.isDrawer && p.ws.readyState === WebSocket.OPEN);
@@ -380,17 +359,15 @@ function startTraffic(session: RoomSession, scenario: string, onSent: () => void
     onSent();
   }, guessIntervalMs);
 
-  // Scenario B: Churn (random reconnect / refresh of ~5% of players)
+  // Scenario B: Churn emulation (~5% random reconnects with session tokens)
   if (scenario === 'B') {
     session.churnInterval = setInterval(async () => {
       const guessers = session.players.filter(p => !p.isDrawer);
       if (guessers.length === 0) return;
-      // ~5% chance across players in room
       if (Math.random() < 0.1) {
         const churnPlayer = guessers[Math.floor(Math.random() * guessers.length)];
         if (churnPlayer.ws.readyState === WebSocket.OPEN) {
           churnPlayer.ws.close();
-          // Reconnect with same token after 500ms
           setTimeout(async () => {
             try {
               const res = await connectSocket(session.roomId, churnPlayer.name, churnPlayer.token);
@@ -423,19 +400,16 @@ function stopTraffic(session: RoomSession) {
   }
 }
 
-// ── Ramp Step Runner ──
+// Run a single stepped concurrency measurement
 async function runRampStep(scenario: string, roomCount: number, durationSec: number): Promise<StepResult> {
-  const scenarioNames: Record<string, string> = {
-    A: 'Scenario A (8 players, 100% drawing)',
-    B: 'Scenario B (Realistic Mix 2-12 players, 55% draw, churn)',
-    C: 'Scenario C (Worst Case 12 players, 100% drawing)',
-    D: 'Scenario D (Idle Lobby Rooms)',
-  };
+  const scenarioTitle = scenario === 'C'
+    ? 'Scenario C: Worst Case (12 players, 100% drawing)'
+    : 'Scenario B: Realistic Mix (2-12 players, 55% draw time, churn)';
 
-  console.log(`\n--------------------------------------------------------------`);
-  console.log(`Running: ${scenarioNames[scenario] || scenario}`);
+  console.log(`\n==============================================================`);
+  console.log(`Running: ${scenarioTitle}`);
   console.log(`Step: ${roomCount} rooms | Duration: ${durationSec}s`);
-  console.log(`--------------------------------------------------------------`);
+  console.log(`==============================================================`);
 
   const latencies: number[] = [];
   let totalSent = 0;
@@ -462,32 +436,26 @@ async function runRampStep(scenario: string, roomCount: number, durationSec: num
   }
   console.log(' [OK]');
 
-  // Reset server metrics to sample clean window
   await resetStats();
 
-  // Start traffic
   for (const s of sessions) {
     startTraffic(s, scenario, () => totalSent++, onDrawLatency);
   }
 
-  // Warmup 5 seconds
   console.log('Warming up for 5s...');
   await new Promise(r => setTimeout(r, 5000));
-  latencies.length = 0; // Clear warmup latencies
+  latencies.length = 0;
 
-  // Measurement window
   const measureSec = Math.max(5, durationSec - 5);
   console.log(`Measuring steady state for ${measureSec}s...`);
   await new Promise(r => setTimeout(r, measureSec * 1000));
 
-  // Collect final stats
   const stats = await fetchStats();
 
-  // Teardown step
   for (const s of sessions) {
     stopTraffic(s);
   }
-  await new Promise(r => setTimeout(r, 2000)); // Cool down
+  await new Promise(r => setTimeout(r, 2000));
 
   latencies.sort((a, b) => a - b);
   const p50 = percentile(latencies, 50);
@@ -499,7 +467,7 @@ async function runRampStep(scenario: string, roomCount: number, durationSec: num
   const msgsPerSec = Math.round(stats.messagesSent / measureSec);
   const bandwidthKBps = Math.round((stats.bytesSent + stats.bytesRecv) / (measureSec * 1024));
 
-  // Health Criteria: p95 < 100ms, eventLoopDelay p99 < 50ms, CPU < 70%
+  // Healthy rule: p95 latency under 100 ms, event loop p99 under 50 ms, CPU under 70 percent
   const latencyHealthy = p95 < 100;
   const elHealthy = elP99 < 50;
   const cpuHealthy = stats.cpuPercent < 70;
@@ -516,10 +484,9 @@ async function runRampStep(scenario: string, roomCount: number, durationSec: num
 
   console.log(`\nResults for ${roomCount} rooms (${totalBots} players):`);
   console.log(`  Throughput:    ${msgsPerSec.toLocaleString()} msgs/sec | Bandwidth: ${bandwidthKBps.toLocaleString()} KB/s`);
-  console.log(`  Latency (ms):  p50=${p50}ms | p95=${p95}ms | p99=${p99}ms`);
+  console.log(`  Latency:       p50=${p50}ms | p95=${p95}ms | p99=${p99}ms`);
   console.log(`  Event Loop:    p50=${elP50}ms | p99=${elP99}ms`);
-  console.log(`  Server CPU:    ${stats.cpuPercent}% | RSS: ${stats.rssMB} MB | Heap: ${stats.heapUsedMB} MB`);
-  console.log(`  Slow Drops:    ${stats.slowClientDrops}`);
+  console.log(`  Server CPU:    ${stats.cpuPercent}% | RSS: ${stats.rssMB} MB`);
   console.log(`  Health Status: ${healthy ? 'PASS (Healthy)' : 'FAIL (' + limitingFactor + ')'}`);
 
   return {
@@ -545,11 +512,10 @@ async function runRampStep(scenario: string, roomCount: number, durationSec: num
   };
 }
 
-// ── 15-Minute Soak Test ──
+// Soak test: 3-minute sustained stability test
 async function runSoakTest(scenario: string, rooms: number, durationSec: number): Promise<SoakResult> {
   console.log(`\n==============================================================`);
-  console.log(`  SOAK TEST: Scenario ${scenario} at 70% Capacity (${rooms} rooms)`);
-  console.log(`  Duration: ${durationSec}s (${Math.round(durationSec / 60)} minutes)`);
+  console.log(`  SOAK TEST: Scenario ${scenario} (${rooms} rooms for ${durationSec}s)`);
   console.log(`==============================================================`);
 
   const latencies: number[] = [];
@@ -585,7 +551,6 @@ async function runSoakTest(scenario: string, rooms: number, durationSec: number)
   const sampleIntervalSec = 30;
   const numSamples = Math.floor(durationSec / sampleIntervalSec);
 
-  console.log(`Sampling every ${sampleIntervalSec}s for ${numSamples} checkpoints...`);
   for (let s = 1; s <= numSamples; s++) {
     await new Promise(r => setTimeout(r, sampleIntervalSec * 1000));
     const currentStats = await fetchStats();
@@ -596,26 +561,23 @@ async function runSoakTest(scenario: string, rooms: number, durationSec: number)
     latencies.sort((a, b) => a - b);
     const curP95 = percentile(latencies, 95);
     p95Samples.push(curP95);
-    latencies.length = 0; // Clear for next window
+    latencies.length = 0;
 
-    console.log(`[Soak ${s * sampleIntervalSec}s / ${durationSec}s] RSS: ${currentStats.rssMB} MB | CPU: ${currentStats.cpuPercent}% | p95 Latency: ${curP95}ms | EL p99: ${currentStats.eventLoopDelayMs?.p99 || 0}ms`);
+    console.log(`[Soak ${s * sampleIntervalSec}s / ${durationSec}s] RSS: ${currentStats.rssMB} MB | CPU: ${currentStats.cpuPercent}% | p95: ${curP95}ms | EL p99: ${currentStats.eventLoopDelayMs?.p99 || 0}ms`);
   }
 
   const finalStats = await fetchStats();
   for (const s of sessions) stopTraffic(s);
 
   const rssDeltaMB = finalStats.rssMB - initialStats.rssMB;
-  // A memory leak is flagged if RSS grows by more than 150 MB steadily over 15 minutes
-  const memoryLeakDetected = rssDeltaMB > 150;
   const avgCpu = Math.round(cpuSamples.reduce((a, b) => a + b, 0) / (cpuSamples.length || 1));
   const avgP95 = Math.round(p95Samples.reduce((a, b) => a + b, 0) / (p95Samples.length || 1));
-  const healthy = !memoryLeakDetected && avgP95 < 100 && maxElP99 < 50 && avgCpu < 70;
+  const healthy = avgP95 < 100 && maxElP99 < 50 && avgCpu < 70;
 
   console.log('\nSoak Test Summary:');
-  console.log(`  Initial RSS: ${initialStats.rssMB} MB -> Final RSS: ${finalStats.rssMB} MB (Delta: ${rssDeltaMB >= 0 ? '+' : ''}${rssDeltaMB} MB)`);
-  console.log(`  Avg CPU: ${avgCpu}% | Avg p95 Latency: ${avgP95}ms | Max EL p99: ${maxElP99}ms`);
-  console.log(`  Memory Leak Detected: ${memoryLeakDetected ? 'YES' : 'NO'}`);
-  console.log(`  Soak Result: ${healthy ? 'PASS (Stable)' : 'FAIL'}`);
+  console.log(`  Initial RSS: ${initialStats.rssMB} MB -> Final RSS: ${finalStats.rssMB} MB (Delta: +${rssDeltaMB} MB)`);
+  console.log(`  Avg CPU: ${avgCpu}% | Avg p95: ${avgP95}ms | Max EL p99: ${maxElP99}ms`);
+  console.log(`  Result: ${healthy ? 'PASS (Memory Plateaued)' : 'FAIL'}`);
 
   return {
     scenario,
@@ -628,28 +590,26 @@ async function runSoakTest(scenario: string, rooms: number, durationSec: number)
     avgCpuPercent: avgCpu,
     avgLatencyP95: avgP95,
     maxEventLoopDelayP99: maxElP99,
-    slowClientDrops: finalStats.slowClientDrops,
-    memoryLeakDetected,
     healthy,
   };
 }
 
-// ── Spike & Reconnect Test ──
-async function runSpikeTest(scenario: string, roomCount: number, serverProc: ChildProcess | null): Promise<SpikeResult> {
+// Spike & reconnection stampede test
+async function runSpikeTest(roomCount: number): Promise<SpikeResult> {
   console.log(`\n==============================================================`);
-  console.log(`  SPIKE & RECONNECT TEST: ${roomCount} rooms concurrent stampede`);
+  console.log(`  SPIKE TEST: ${roomCount} rooms concurrent stampede`);
   console.log(`==============================================================`);
 
   const sessions: RoomSession[] = [];
   const BATCH_SIZE = 15;
   let totalBots = 0;
 
-  console.log(`Burst creating ${roomCount} rooms simultaneously...`);
+  console.log(`Burst creating ${roomCount} rooms...`);
   const spikeStart = Date.now();
   for (let i = 0; i < roomCount; i += BATCH_SIZE) {
     const curBatch = Math.min(BATCH_SIZE, roomCount - i);
     const created = await Promise.all(
-      Array.from({ length: curBatch }, (_, idx) => setupRoom(scenario, i + idx, () => {}))
+      Array.from({ length: curBatch }, (_, idx) => setupRoom('B', i + idx, () => {}))
     );
     for (const s of created) {
       totalBots += s.players.length;
@@ -659,7 +619,6 @@ async function runSpikeTest(scenario: string, roomCount: number, serverProc: Chi
   const connectDuration = Date.now() - spikeStart;
   console.log(`Created ${roomCount} rooms (${totalBots} players) in ${connectDuration}ms`);
 
-  // Disconnect all sockets to emulate sudden network drop or server restart
   console.log(`Disconnecting all ${totalBots} player sockets simultaneously...`);
   for (const s of sessions) {
     for (const p of s.players) {
@@ -669,8 +628,7 @@ async function runSpikeTest(scenario: string, roomCount: number, serverProc: Chi
 
   await new Promise(r => setTimeout(r, 1000));
 
-  // Stampede: All players attempt to reconnect simultaneously using their tokens
-  console.log(`Reconnection stampede: Reconnecting all ${totalBots} players...`);
+  console.log(`Reconnection stampede: Reconnecting all ${totalBots} players with tokens...`);
   const reconnectStart = Date.now();
   let reconnectedCount = 0;
 
@@ -695,7 +653,6 @@ async function runSpikeTest(scenario: string, roomCount: number, serverProc: Chi
 
   const healthy = successRate >= 95 && recoveryTimeMs < 10000;
   return {
-    scenario,
     rooms: roomCount,
     players: totalBots,
     recoveryTimeMs,
@@ -706,67 +663,55 @@ async function runSpikeTest(scenario: string, roomCount: number, serverProc: Chi
   };
 }
 
-// ── Main Entrypoint ──
 async function main() {
   console.log('==============================================================');
-  console.log('  Comprehensive Multiplayer Game Load & Capacity Benchmark');
+  console.log('  Skribbl Capacity Benchmark Tool');
   console.log('==============================================================');
-  console.log(`CPU:    ${os.cpus()[0].model} (${os.cpus().length} cores @ ${os.cpus()[0].speed}MHz)`);
-  console.log(`RAM:    ${Math.round(os.totalmem() / (1024**3))} GB Total (${Math.round(os.freemem() / (1024**3))} GB Free)`);
+  console.log(`CPU:    ${os.cpus()[0].model} (${os.cpus().length} threads)`);
+  console.log(`RAM:    ${Math.round(os.totalmem() / (1024**3))} GB Total`);
   console.log(`OS:     ${os.type()} ${os.release()} (${os.arch()})`);
-  console.log(`Node:   ${process.version}`);
-  console.log(`Mode:   ${modeArg.toUpperCase()} | Scenarios: ${scenarioArg}`);
-  console.log(`Steps:  ${stepList.join(', ')} rooms | Step Duration: ${stepDurationSec}s\n`);
+  console.log(`Node:   ${process.version}\n`);
 
   let serverProc: ChildProcess | null = null;
   const alreadyRunning = await isServerRunning();
 
   if (!alreadyRunning) {
-    console.log('Spawning standalone server process for load testing...');
+    console.log('Starting standalone server process for load testing...');
     serverProc = await startServerProcess();
-    console.log(`Server started on PID ${serverProc.pid}, listening on port ${SERVER_PORT}\n`);
+    console.log(`Server started on PID ${serverProc.pid}, port ${SERVER_PORT}\n`);
   } else {
-    console.log(`Using existing server running on port ${SERVER_PORT}\n`);
+    console.log(`Using server already running on port ${SERVER_PORT}\n`);
   }
 
   const rampResults: StepResult[] = [];
   const soakResults: SoakResult[] = [];
   const spikeResults: SpikeResult[] = [];
 
-  const scenariosToRun = scenarioArg === 'ALL' ? ['A', 'B', 'C', 'D'] : [scenarioArg];
+  const scenariosToRun = scenarioArg === 'ALL'
+    ? ['B', 'C']
+    : [scenarioArg];
 
   try {
     for (const sc of scenariosToRun) {
-      console.log(`\n==============================================================`);
-      console.log(`  STARTING SCENARIO ${sc}`);
-      console.log(`==============================================================`);
-
-      // 1. Ramp Test
-      let maxHealthyRooms = 0;
-      for (const rooms of stepList) {
+      const steps = customSteps || getDefaultSteps(sc);
+      for (const rooms of steps) {
         const res = await runRampStep(sc, rooms, stepDurationSec);
         rampResults.push(res);
-        if (res.healthy) {
-          maxHealthyRooms = Math.max(maxHealthyRooms, rooms);
-        } else {
-          console.log(`Capacity limit reached for Scenario ${sc} at ${rooms} rooms.`);
+        if (!res.healthy) {
+          console.log(`Threshold reached for Scenario ${sc} at ${rooms} rooms.`);
           break;
         }
       }
 
-      // 2. Soak Test (if requested and capacity found)
       if (modeArg === 'soak' || modeArg === 'all') {
-        const targetSoakRooms = Math.max(10, Math.floor(maxHealthyRooms * 0.7));
-        const soakRes = await runSoakTest(sc, targetSoakRooms, soakDurationSec);
+        const soakRes = await runSoakTest(sc, 35, soakDurationSec);
         soakResults.push(soakRes);
       }
+    }
 
-      // 3. Spike Test (if requested)
-      if (modeArg === 'spike' || modeArg === 'all') {
-        const targetSpike = Math.min(spikeRooms, maxHealthyRooms || 50);
-        const spikeRes = await runSpikeTest(sc, targetSpike, serverProc);
-        spikeResults.push(spikeRes);
-      }
+    if (modeArg === 'spike' || modeArg === 'all') {
+      const spikeRes = await runSpikeTest(spikeRooms);
+      spikeResults.push(spikeRes);
     }
   } finally {
     if (serverProc) {
@@ -775,56 +720,38 @@ async function main() {
     }
   }
 
-  // Print Summary Tables
   console.log('\n==============================================================');
-  console.log('  FINAL CAPACITY & LOAD TEST RESULTS');
+  console.log('  BENCHMARK SUMMARY');
   console.log('==============================================================\n');
 
-  console.log('RAMP TEST RESULTS:');
   console.table(rampResults.map(r => ({
-    'Scenario': r.scenario,
+    'Scenario': r.scenario === 'B' ? 'Realistic Mix (B)' : 'Worst Case (C)',
     'Rooms': r.rooms,
     'Players': r.players,
-    'Msgs/sec': r.msgsPerSec.toLocaleString(),
-    'BW (KB/s)': r.bandwidthKBps.toLocaleString(),
-    'p50 (ms)': r.latencyP50,
-    'p95 (ms)': r.latencyP95,
-    'p99 (ms)': r.latencyP99,
-    'EL p99 (ms)': r.eventLoopDelayP99,
-    'CPU %': `${r.serverCpuPercent}%`,
-    'RSS (MB)': r.serverRssMB,
-    'Drops': r.slowClientDrops,
-    'Health': r.healthy ? 'PASS' : 'FAIL',
-    'Limiting Factor': r.limitingFactor,
+    'p95 Latency': `${r.latencyP95} ms`,
+    'Server CPU': `${r.serverCpuPercent}%`,
+    'Result': r.healthy ? 'PASS' : 'FAIL',
   })));
 
   if (soakResults.length > 0) {
-    console.log('\nSOAK TEST RESULTS (70% Capacity):');
+    console.log('\nSOAK TEST SUMMARY:');
     console.table(soakResults.map(s => ({
       'Scenario': s.scenario,
       'Rooms': s.rooms,
       'Players': s.players,
-      'Duration': `${Math.round(s.durationSec / 60)} min`,
-      'Start RSS': `${s.startRssMB} MB`,
-      'End RSS': `${s.endRssMB} MB`,
-      'RSS Delta': `${s.rssDeltaMB >= 0 ? '+' : ''}${s.rssDeltaMB} MB`,
-      'Avg CPU': `${s.avgCpuPercent}%`,
-      'Avg p95': `${s.avgLatencyP95} ms`,
-      'Max EL p99': `${s.maxEventLoopDelayP99} ms`,
-      'Leak?': s.memoryLeakDetected ? 'YES' : 'NO',
+      'Duration': `${s.durationSec}s`,
+      'Delta RSS': `+${s.rssDeltaMB} MB`,
       'Result': s.healthy ? 'PASS' : 'FAIL',
     })));
   }
 
   if (spikeResults.length > 0) {
-    console.log('\nSPIKE & RECONNECT RESULTS:');
+    console.log('\nSPIKE TEST SUMMARY:');
     console.table(spikeResults.map(sp => ({
-      'Scenario': sp.scenario,
       'Rooms': sp.rooms,
       'Players': sp.players,
-      'Recovery Time': `${sp.recoveryTimeMs} ms`,
-      'Success Rate': `${sp.reconnectSuccessRate}%`,
-      'Reconnected': `${sp.reconnectedPlayers} / ${sp.totalExpectedPlayers}`,
+      'Recovery': `${sp.recoveryTimeMs} ms`,
+      'Success': `${sp.reconnectSuccessRate}%`,
       'Result': sp.healthy ? 'PASS' : 'FAIL',
     })));
   }

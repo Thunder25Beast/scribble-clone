@@ -55,26 +55,47 @@ if (!fs.existsSync(stateDir)) {
 function persistRoom(room: Room): void {
   const data = room.toPersistedState();
   const filePath = path.join(stateDir, `${room.roomId}.json`);
-  const tmpPath = filePath + '.tmp';
+  const tmpPath = path.join(stateDir, `.${room.roomId}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
   try {
     fs.writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
     fs.renameSync(tmpPath, filePath);
   } catch (err) {
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch { /* ignore */ }
     console.error(`Failed to persist room ${room.roomId}:`, err);
   }
 }
 
 function loadPersistedRooms(): void {
   try {
-    const files = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
-    for (const file of files) {
+    const entries = fs.readdirSync(stateDir);
+    const now = Date.now();
+    for (const file of entries) {
+      const filePath = path.join(stateDir, file);
+      // Clean up orphaned .tmp files left over from crashes
+      if (file.endsWith('.tmp')) {
+        try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+        continue;
+      }
+      if (!file.endsWith('.json')) continue;
+
       try {
-        const data = JSON.parse(fs.readFileSync(path.join(stateDir, file), 'utf-8')) as PersistedRoom;
+        const stats = fs.statSync(filePath);
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const data = JSON.parse(raw) as PersistedRoom;
+
+        // Auto-prune stale empty rooms older than ROOM_TTL_MS
+        const isStale = (now - stats.mtimeMs) > CONFIG.ROOM_TTL_MS;
+        if (isStale && (!data.players || data.players.length === 0)) {
+          try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+          continue;
+        }
+
         const room = Room.fromPersisted(data, persistRoom);
         rooms.set(room.roomId, room);
         console.log(`Restored room ${room.roomId} (${data.players.length} players, was in phase ${data.phase})`);
       } catch (err) {
-        console.error(`Failed to load room from ${file}:`, err);
+        console.warn(`[WARN] Removing corrupted or invalid state file ${file}: ${(err as Error).message}`);
+        try { fs.unlinkSync(filePath); } catch { /* ignore */ }
       }
     }
   } catch {

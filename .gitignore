@@ -1,6 +1,7 @@
 node_modules/
 dist/
 state/
+state_loadtest/
 *.log
 .DS_Store
 Thumbs.db

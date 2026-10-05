@@ -4,6 +4,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
+import fs from 'node:fs';
 import { WebSocket } from 'ws';
 
 export interface StepResult {
@@ -98,12 +99,21 @@ async function isServerRunning(): Promise<boolean> {
 }
 
 function startServerProcess(): Promise<ChildProcess> {
+  const loadtestStateDir = path.resolve('./state_loadtest');
+  try {
+    if (fs.existsSync(loadtestStateDir)) {
+      fs.rmSync(loadtestStateDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(loadtestStateDir, { recursive: true });
+  } catch {}
+
   return new Promise((resolve, reject) => {
     const proc = spawn('node', ['dist/server/index.js'], {
       cwd: path.resolve('.'),
       env: {
         ...process.env,
         PORT: String(SERVER_PORT),
+        STATE_DIR: loadtestStateDir,
         JOIN_RATE_LIMIT: '500000',
         ROOM_CREATE_RATE_LIMIT: '500000',
       },

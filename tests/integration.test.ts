@@ -586,6 +586,17 @@ describe('Integration Tests: Real WebSocket Clients and Server Authority', () =>
     assert.ok(drawerChatForGuest, 'Guesser received drawer chat message');
     assert.ok(drawerChatForGuest.playerName.includes('HostAlice'), 'Message reflects drawer sender name');
 
+    // 5. Guesser types a near-miss -> receives near_miss with their typed text, while other players see nothing
+    const nearMissGuess = secretWord.slice(0, -1);
+    guest.send({ type: 'chat', text: nearMissGuess });
+    const nearMissMsg = await guest.waitFor(m => m.type === 'near_miss') as any;
+    assert.ok(nearMissMsg, 'Guesser received near_miss notification');
+    assert.equal(nearMissMsg.text, nearMissGuess, 'Near-miss includes the typed word');
+
+    // Other players should NOT have received this near miss text or notification
+    const hostSawNearMiss = host.messages.find(m => m.type === 'near_miss' || ((m as any).text === nearMissGuess));
+    assert.strictEqual(hostSawNearMiss, undefined, 'Other players never receive near miss word');
+
     await host.close();
     await guest.close();
   });

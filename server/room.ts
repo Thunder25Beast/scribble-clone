@@ -847,7 +847,7 @@ export class Room {
 
       // Near miss check
       if (isNearMiss(text, this.currentWord!)) {
-        this.sendTo(playerId, { type: 'near_miss' });
+        this.sendTo(playerId, { type: 'near_miss', text });
         // Don't broadcast the text
         return;
       }

@@ -276,6 +276,7 @@ export interface S2C_CorrectGuess {
 
 export interface S2C_NearMiss {
   type: 'near_miss';
+  text?: string;
 }
 
 export interface S2C_HintUpdate {

@@ -301,7 +301,13 @@ function handleServerMessage(msg: ServerMessage): void {
       break;
 
     case 'near_miss':
-      addChatMessage('', 'Close!', false, false, 'near-miss');
+      if (msg.text) {
+        const myName = state?.players.find(p => p.id === playerId)?.name || 'You';
+        addChatMessage(myName, msg.text, false, true);
+        addChatMessage('', '"' + msg.text + '" is close!', false, false, 'near-miss');
+      } else {
+        addChatMessage('', 'Close!', false, false, 'near-miss');
+      }
       break;
 
     case 'hint_update':

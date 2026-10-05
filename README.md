@@ -2,30 +2,25 @@
 
 A real time multiplayer drawing and guessing browser game inspired by Skribbl.io. The server acts as the single source of truth for all game mechanics, turns, scoring, drawing streams, and chat verification.
 
-## Live Demo
+## Deliverables
 
-Play the live multiplayer game in your browser:
-**[https://scribble-clone-o3mx.onrender.com/](https://scribble-clone-o3mx.onrender.com/)**
+1. **One Documented Command Startup**:
+   ```bash
+   npm install && npm start
+   ```
+   Installs dependencies, builds server and client bundles, and starts the server on port 3000 (`http://localhost:3000`).
+   * Live Demo: [https://scribble-clone-o3mx.onrender.com/](https://scribble-clone-o3mx.onrender.com/)
 
-## Video Demonstration
+2. **Screen Recording with 3 Players Across Separate Browsers**:
+   * [Watch 3-Player Walkthrough on Google Drive](https://drive.google.com/file/d/1h5fWh2yjbOTirvkLuDWnbO5oZI2LGsgC/view?usp=sharing)
+   * Demonstrates shareable room links, pre-game chat, real-time drawing tools, letter hints, near-miss alerts, anti-spoiler chat isolation, mid-round reconnect resilience, and post-game stroke replay.
 
-Watch the live gameplay walkthrough (3 players across separate browsers):
-**[Watch 3-Player Walkthrough on Google Drive](https://drive.google.com/file/d/1h5fWh2yjbOTirvkLuDWnbO5oZI2LGsgC/view?usp=sharing)**
+3. **Technical Architecture Note ([NOTE.md](NOTE.md))**:
+   * **Canvas Sync & Stroke Data**: Append-only vector op log on a fixed 800x600 logical canvas streamed via WebSockets with local optimistic painting.
+   * **Latency & Ordering**: Single-writer total order, monotonic sequence numbers, and uncompressed TCP WebSockets with resync on sequence gaps.
+   * **Server Restart Recovery**: Atomic disk persistence on game boundaries; interrupted turns reset cleanly to WAITING state with scores intact.
+   * **Capacity & Load Measurement**: Empirically measured at least 75 and fewer than 100 realistic rooms (~500 players) on one core using automated WebSocket bots (full report in [LOAD_TEST.md](LOAD_TEST.md)).
 
-> *Note*: To unhurriedly demonstrate every assignment requirement end-to-end-including shareable rooms, pre-game lobby chat, multi-tool drawing with instant stroke streaming, letter hints, near-miss alerts, anti-spoiler chat isolation, mid-round reconnect resilience, and the post-game stroke-by-stroke replay-the recording runs ~3 minutes. Feel free to watch at **1.25x–1.5x speed** for a rapid walkthrough.
-
-## Quick Start: The One Command
-
-Run the following command from the repository root:
-
-```bash
-npm install && npm start
-```
-
-This installs dependencies, builds both server and client bundles, and starts the server on port 3000 (or the port specified by the `PORT` environment variable).
-
-Access the game in your browser at:
-`http://localhost:3000`
 
 ## How to Play
 

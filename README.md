@@ -7,6 +7,13 @@ A real time multiplayer drawing and guessing browser game inspired by Skribbl.io
 Play the live multiplayer game in your browser:
 **[https://scribble-clone-o3mx.onrender.com/](https://scribble-clone-o3mx.onrender.com/)**
 
+## Video Demonstration
+
+Watch the live gameplay walkthrough (3 players across separate browsers):
+**[Watch 3-Player Walkthrough on Google Drive](https://drive.google.com/file/d/1h5fWh2yjbOTirvkLuDWnbO5oZI2LGsgC/view?usp=sharing)**
+
+> *Note*: To unhurriedly demonstrate every assignment requirement end-to-end—including shareable rooms, pre-game lobby chat, multi-tool drawing with instant stroke streaming, letter hints, near-miss alerts, anti-spoiler chat isolation, mid-round reconnect resilience, and the post-game stroke-by-stroke replay—the recording runs ~3 minutes. Feel free to watch at **1.25x–1.5x speed** for a rapid walkthrough.
+
 ## Quick Start: The One Command
 
 Run the following command from the repository root:

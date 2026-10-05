@@ -519,9 +519,9 @@ function renderPlayerList(): void {
           : '<span class="player-drawing">Drawing</span>')
       : (p.hasGuessed && isGame && state!.phase === 'DRAWING'
         ? '<span class="player-guessed">Guessed!</span>' : '');
-    const meClass = p.id === playerId ? ' style="font-weight:700"' : '';
+    const meClass = p.id === playerId ? ' me' : '';
 
-    return `<li${meClass}>
+    return `<li class="player-item${meClass}">
       <span class="player-dot ${dotClass}"></span>
       <span class="player-name">${escapeHtml(p.name)}</span>
       ${hostBadge}${statusHtml}${scoreHtml}
@@ -1514,3 +1514,20 @@ checkUrlRoom();
 if (!roomId) {
   connect();
 }
+
+// ── Mobile Virtual Keyboard Focus Helper ──
+function setupMobileInputFocus(): void {
+  const ids = ['chat-input', 'lobby-chat-input', 'input-name', 'input-room-code'];
+  ids.forEach(id => {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (!el) return;
+    el.addEventListener('touchend', () => {
+      // Force explicit focus on mobile touchend so soft keyboard pops up reliably
+      el.focus();
+    }, { passive: true });
+    el.addEventListener('click', () => {
+      el.focus();
+    });
+  });
+}
+setupMobileInputFocus();

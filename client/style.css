@@ -31,6 +31,7 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
 }
 
@@ -39,6 +40,7 @@ body {
   display: none;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   position: absolute;
   top: 0;
   left: 0;
@@ -162,6 +164,9 @@ body {
   font-size: 0.95rem;
   outline: none;
   transition: border-color var(--transition);
+  touch-action: manipulation;
+  -webkit-user-select: text;
+  user-select: text;
 }
 .input:focus {
   border-color: var(--accent-primary);
@@ -353,19 +358,31 @@ select.input {
 /* ── Player list ── */
 .player-list {
   list-style: none;
+  padding: 0;
+  margin: 0;
 }
 .player-list li {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  margin-bottom: 4px;
-  transition: background var(--transition);
-  font-size: 0.9rem;
+  gap: 6px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 5px;
+  transition: all var(--transition);
+  font-size: 0.88rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
 }
 .player-list li:hover {
   background: var(--bg-elevated);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.player-list li.me {
+  border-color: rgba(108, 92, 231, 0.5);
+  background: rgba(108, 92, 231, 0.1);
 }
 .player-dot {
   width: 8px;
@@ -375,33 +392,57 @@ select.input {
 }
 .player-dot.connected { background: var(--accent-success); }
 .player-dot.disconnected { background: var(--accent-danger); }
-.player-name { flex: 1; }
-.player-score {
+.player-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
+  color: var(--text-primary);
+}
+.player-score {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-weight: 800;
+  font-size: 0.95rem;
   color: var(--accent-warning);
+  padding-left: 6px;
+  text-align: right;
+  white-space: nowrap;
 }
 .player-host-badge {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   padding: 1px 6px;
   background: var(--accent-warning);
   color: var(--bg-primary);
   border-radius: 99px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .player-guessed {
   color: var(--accent-success);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .player-drawing {
   color: var(--accent-secondary);
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .player-choosing {
   color: var(--accent-warning);
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  font-weight: 700;
   animation: pulseChoosing 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 @keyframes pulseChoosing {
   0%, 100% { opacity: 1; }
@@ -423,6 +464,7 @@ select.input {
 .game-layout {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -526,11 +568,12 @@ select.input {
   min-height: 0;
 }
 .game-sidebar-left {
-  width: 200px;
+  width: 225px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   overflow-y: auto;
-  padding: 8px;
+  padding: 10px 8px;
+  flex-shrink: 0;
 }
 .game-sidebar-right {
   width: 280px;
@@ -983,22 +1026,30 @@ select.input {
     gap: 4px;
   }
   .game-sidebar-left {
-    width: 125px;
-    padding: 6px 4px;
+    width: 195px;
+    padding: 8px 6px;
+    flex-shrink: 0;
   }
   .game-sidebar-left .player-list li {
-    padding: 5px 6px;
-    font-size: 0.78rem;
-    gap: 4px;
+    padding: 6px 8px;
+    font-size: 0.82rem;
+    gap: 5px;
   }
   .game-sidebar-left .player-name {
-    max-width: 65px;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .game-sidebar-right {
-    width: 190px;
+    width: 215px;
+  }
+  .chat-input-area .input {
+    font-size: 16px;
+    padding: 8px 10px;
+    touch-action: manipulation;
   }
   .chat-messages {
     font-size: 0.82rem;
@@ -1100,10 +1151,29 @@ select.input {
     width: 100%;
     height: 180px;
     min-height: 120px;
-    max-height: 220px;
+    max-height: 35vh;
     border-left: none;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-input-area {
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+    position: relative;
+    z-index: 10;
+  }
+  .chat-input-area .input {
+    font-size: 16px !important;
+    padding: 8px 12px;
+    height: 42px;
+    touch-action: manipulation;
+  }
+  .chat-input-area .btn {
+    height: 42px;
+    padding: 0 16px;
+    font-size: 0.95rem;
   }
   .lobby-container {
     padding: 16px 12px;

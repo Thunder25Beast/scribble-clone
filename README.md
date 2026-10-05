@@ -4,22 +4,23 @@ A real time multiplayer drawing and guessing browser game inspired by Skribbl.io
 
 ## Deliverables
 
-1. **One Documented Command Startup**:
-   ```bash
-   npm install && npm start
-   ```
-   Installs dependencies, builds server and client bundles, and starts the server on port 3000 (`http://localhost:3000`).
-   * Live Demo: [https://scribble-clone-o3mx.onrender.com/](https://scribble-clone-o3mx.onrender.com/)
+* **The game running from one documented command**:
+  ```bash
+  npm install && npm start
+  ```
+  Installs dependencies, builds server and client bundles, and starts the server on port 3000 (`http://localhost:3000`).
+  * Live hosted game: [https://scribble-clone-o3mx.onrender.com/](https://scribble-clone-o3mx.onrender.com/)
 
-2. **Screen Recording with 3 Players Across Separate Browsers**:
-   * [Watch 3-Player Walkthrough on Google Drive](https://drive.google.com/file/d/1h5fWh2yjbOTirvkLuDWnbO5oZI2LGsgC/view?usp=sharing)
-   * Demonstrates shareable room links, pre-game chat, real-time drawing tools, letter hints, near-miss alerts, anti-spoiler chat isolation, mid-round reconnect resilience, and post-game stroke replay.
+* **A screen recording with at least 3 players in separate browsers**:
+  * [Watch 3-Player Walkthrough on Google Drive](https://drive.google.com/file/d/1h5fWh2yjbOTirvkLuDWnbO5oZI2LGsgC/view?usp=sharing)
+  * Demonstrates shareable room links, pre-game chat, real-time drawing tools, letter hints, near-miss alerts, anti-spoiler chat isolation, mid-round reconnect resilience, and post-game stroke replay.
 
-3. **Technical Architecture Note ([NOTE.md](NOTE.md))**:
-   * **Canvas Sync & Stroke Data**: Append-only vector op log on a fixed 800x600 logical canvas streamed via WebSockets with local optimistic painting.
-   * **Latency & Ordering**: Single-writer total order, monotonic sequence numbers, and uncompressed TCP WebSockets with resync on sequence gaps.
-   * **Server Restart Recovery**: Atomic disk persistence on game boundaries; interrupted turns reset cleanly to WAITING state with scores intact.
-   * **Capacity & Load Measurement**: Empirically measured at least 75 and fewer than 100 realistic rooms (~500 players) on one core using automated WebSocket bots (full report in [LOAD_TEST.md](LOAD_TEST.md)).
+* **A short technical note ([NOTE.md](NOTE.md)) covering**:
+  * **[How you sync the canvas and send stroke data](NOTE.md#how-the-canvas-syncs-and-stroke-data-is-sent)**: Append-only vector op log on a fixed 800x600 logical canvas streamed via WebSockets with local optimistic painting.
+  * **[How you handle latency and ordering](NOTE.md#how-latency-and-ordering-are-handled)**: Single-writer total order, monotonic sequence numbers, and uncompressed TCP WebSockets with resync on sequence gaps.
+  * **[What happens when the server restarts](NOTE.md#what-happens-when-the-server-restarts)**: Atomic disk persistence on game boundaries; interrupted turns reset cleanly to WAITING state with scores intact.
+  * **[Roughly how many rooms one server instance can handle, and how you measured it](NOTE.md#roughly-how-many-rooms-one-instance-can-handle-and-how-it-was-measured)**: Empirically measured at least 75 and fewer than 100 realistic rooms (~500 players) on one core using automated WebSocket bots (full report in [LOAD_TEST.md](LOAD_TEST.md)).
+
 
 
 ## How to Play

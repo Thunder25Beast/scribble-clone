@@ -755,9 +755,12 @@ async function main() {
       'Result': sp.healthy ? 'PASS' : 'FAIL',
     })));
   }
+
+  process.exit(0);
 }
 
 main().catch(err => {
   console.error('Fatal loadtest error:', err);
   process.exit(1);
 });
+

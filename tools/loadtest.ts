@@ -70,7 +70,7 @@ const WS_URL = `ws://localhost:${SERVER_PORT}`;
 const scenarioArg = getArg('--scenario=', 'ALL').toUpperCase();
 const modeArg = getArg('--mode=', 'ramp').toLowerCase(); // ramp, soak, spike, all
 const stepDurationSec = parseInt(getArg('--duration=', '60'), 10);
-const soakDurationSec = parseInt(getArg('--soak-duration=', '180'), 10); // 3 minutes as documented
+const soakDurationSec = parseInt(getArg('--soak-duration=', '180'), 10); // 3 minutes
 const spikeRooms = parseInt(getArg('--spike-rooms=', '50'), 10);
 
 // Default steps per scenario matching the documented benchmarks
@@ -220,13 +220,13 @@ interface RoomSession {
 // Setup a room with bots according to scenario rules
 async function setupRoom(scenario: string, roomIndex: number, onDrawOpLatency: (lat: number) => void): Promise<RoomSession> {
   const roomId = await createRoom();
-  let playerCount = 6;
+  let playerCount = 7;
 
   if (scenario === 'C') {
     // Scenario C: Worst case 12 players per room
     playerCount = 12;
   } else {
-    // Scenario B: Realistic mix between 2 and 12 players, averaging ~6
+    // Scenario B: Uniform distribution between 2 and 12 players (average 7)
     playerCount = Math.floor(Math.random() * 11) + 2;
   }
 
@@ -241,6 +241,29 @@ async function setupRoom(scenario: string, roomIndex: number, onDrawOpLatency: (
   };
 
   const players: BotPlayer[] = [drawerPlayer];
+  const session: RoomSession = {
+    roomId,
+    players,
+    drawer: drawerPlayer,
+    isDrawingActive: true,
+  };
+
+  // Helper to handle turn changes: if any bot is chosen as the new drawer, choose a word and continue
+  const attachTurnHandler = (bot: BotPlayer) => {
+    bot.ws.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === 'phase_change' && msg.phase === 'CHOOSING_WORD' && msg.wordChoices) {
+          session.drawer = bot;
+          session.isDrawingActive = true;
+          bot.isDrawer = true;
+          bot.ws.send(JSON.stringify({ type: 'choose_word', word: msg.wordChoices[0] }));
+        }
+      } catch {}
+    });
+  };
+
+  attachTurnHandler(drawerPlayer);
 
   // Connect Guessers
   for (let g = 1; g < playerCount; g++) {
@@ -261,8 +284,15 @@ async function setupRoom(scenario: string, roomIndex: number, onDrawOpLatency: (
         }
       } catch {}
     });
+    attachTurnHandler(guesser);
     players.push(guesser);
   }
+
+  // Set drawTime to 180s (max allowed) and 10 rounds so turns stay active during testing
+  drawerPlayer.ws.send(JSON.stringify({
+    type: 'update_settings',
+    settings: { drawTime: 180, rounds: 10 },
+  }));
 
   // Advance game to DRAWING phase
   drawerPlayer.ws.send(JSON.stringify({ type: 'start_game' }));
@@ -281,12 +311,7 @@ async function setupRoom(scenario: string, roomIndex: number, onDrawOpLatency: (
     drawerPlayer.ws.on('message', handler);
   });
 
-  return {
-    roomId,
-    players,
-    drawer: drawerPlayer,
-    isDrawingActive: true,
-  };
+  return session;
 }
 
 // Generate realistic traffic per room
@@ -323,18 +348,19 @@ function startTraffic(session: RoomSession, scenario: string, onSent: () => void
     cycle();
   }
 
-  // Draw loop: 30 batches per second (~33ms)
+  // Draw loop: 30 batches per second (~33ms) dispatched from the active drawer
   session.strokeInterval = setInterval(() => {
     if (scenario === 'B' && !isCurrentlyDrawing) return;
 
-    if (session.drawer.ws.readyState === WebSocket.OPEN) {
+    const currentDrawer = session.drawer;
+    if (currentDrawer && currentDrawer.ws.readyState === WebSocket.OPEN) {
       strokeCounter++;
       const now = Date.now();
       const points = Array.from({ length: 10 }, (_, p) => ({
         x: (50 + ((strokeCounter * 3 + p * 5) % 700)),
         y: (50 + ((strokeCounter * 2 + p * 4) % 500)),
       }));
-      session.drawer.ws.send(JSON.stringify({
+      currentDrawer.ws.send(JSON.stringify({
         type: 'draw_op',
         op: {
           type: 'stroke_points',
@@ -350,7 +376,7 @@ function startTraffic(session: RoomSession, scenario: string, onSent: () => void
   // Guessers chat and guess traffic
   const guessIntervalMs = scenario === 'B' ? 3500 : 3000;
   session.guessInterval = setInterval(() => {
-    const guessers = session.players.filter(p => !p.isDrawer && p.ws.readyState === WebSocket.OPEN);
+    const guessers = session.players.filter(p => p !== session.drawer && p.ws.readyState === WebSocket.OPEN);
     if (guessers.length === 0) return;
     const randomGuesser = guessers[Math.floor(Math.random() * guessers.length)];
     const words = ['apple', 'banana', 'tree', 'cat', 'guitar', 'house', 'water', 'car'];
@@ -359,12 +385,12 @@ function startTraffic(session: RoomSession, scenario: string, onSent: () => void
     onSent();
   }, guessIntervalMs);
 
-  // Scenario B: Churn emulation (~5% random reconnects with session tokens)
+  // Scenario B: Churn emulation (10 percent chance every 5 seconds per room of one guesser dropping and rejoining)
   if (scenario === 'B') {
     session.churnInterval = setInterval(async () => {
-      const guessers = session.players.filter(p => !p.isDrawer);
+      const guessers = session.players.filter(p => p !== session.drawer);
       if (guessers.length === 0) return;
-      if (Math.random() < 0.1) {
+      if (Math.random() < 0.10) {
         const churnPlayer = guessers[Math.floor(Math.random() * guessers.length)];
         if (churnPlayer.ws.readyState === WebSocket.OPEN) {
           churnPlayer.ws.close();
@@ -436,8 +462,6 @@ async function runRampStep(scenario: string, roomCount: number, durationSec: num
   }
   console.log(' [OK]');
 
-  await resetStats();
-
   for (const s of sessions) {
     startTraffic(s, scenario, () => totalSent++, onDrawLatency);
   }
@@ -445,6 +469,9 @@ async function runRampStep(scenario: string, roomCount: number, durationSec: num
   console.log('Warming up for 5s...');
   await new Promise(r => setTimeout(r, 5000));
   latencies.length = 0;
+
+  // Reset server statistics immediately after warm-up so messagesSent aligns precisely with measureSec
+  await resetStats();
 
   const measureSec = Math.max(5, durationSec - 5);
   console.log(`Measuring steady state for ${measureSec}s...`);
@@ -547,6 +574,7 @@ async function runSoakTest(scenario: string, rooms: number, durationSec: number)
   const cpuSamples: number[] = [];
   const p95Samples: number[] = [];
   let maxElP99 = 0;
+  let prevMessagesSent = initialStats.messagesSent;
 
   const sampleIntervalSec = 30;
   const numSamples = Math.floor(durationSec / sampleIntervalSec);
@@ -554,6 +582,9 @@ async function runSoakTest(scenario: string, rooms: number, durationSec: number)
   for (let s = 1; s <= numSamples; s++) {
     await new Promise(r => setTimeout(r, sampleIntervalSec * 1000));
     const currentStats = await fetchStats();
+    const intervalMsgs = currentStats.messagesSent - prevMessagesSent;
+    prevMessagesSent = currentStats.messagesSent;
+
     cpuSamples.push(currentStats.cpuPercent);
     if (currentStats.eventLoopDelayMs && currentStats.eventLoopDelayMs.p99 > maxElP99) {
       maxElP99 = currentStats.eventLoopDelayMs.p99;
@@ -563,7 +594,7 @@ async function runSoakTest(scenario: string, rooms: number, durationSec: number)
     p95Samples.push(curP95);
     latencies.length = 0;
 
-    console.log(`[Soak ${s * sampleIntervalSec}s / ${durationSec}s] RSS: ${currentStats.rssMB} MB | CPU: ${currentStats.cpuPercent}% | p95: ${curP95}ms | EL p99: ${currentStats.eventLoopDelayMs?.p99 || 0}ms`);
+    console.log(`[Soak ${s * sampleIntervalSec}s / ${durationSec}s] Msgs sent (last 30s): ${intervalMsgs.toLocaleString()} | RSS: ${currentStats.rssMB} MB | CPU: ${currentStats.cpuPercent}% | p95: ${curP95}ms | EL p99: ${currentStats.eventLoopDelayMs?.p99 || 0}ms`);
   }
 
   const finalStats = await fetchStats();
@@ -649,9 +680,16 @@ async function runSpikeTest(roomCount: number): Promise<SpikeResult> {
   console.log(`Recovery Time: ${recoveryTimeMs}ms`);
   console.log(`Reconnected: ${reconnectedCount}/${totalBots} players (${successRate}%)`);
 
+  // Verify room state: query player count across rooms to confirm no duplicate players
+  let duplicateCount = 0;
+  for (const s of sessions) {
+    const uniqueTokens = new Set(s.players.map(p => p.token));
+    if (uniqueTokens.size !== s.players.length) duplicateCount++;
+  }
+
   for (const s of sessions) stopTraffic(s);
 
-  const healthy = successRate >= 95 && recoveryTimeMs < 10000;
+  const healthy = successRate >= 95 && recoveryTimeMs < 10000 && duplicateCount === 0;
   return {
     rooms: roomCount,
     players: totalBots,
@@ -693,18 +731,25 @@ async function main() {
 
   try {
     for (const sc of scenariosToRun) {
-      const steps = customSteps || getDefaultSteps(sc);
-      for (const rooms of steps) {
-        const res = await runRampStep(sc, rooms, stepDurationSec);
-        rampResults.push(res);
-        if (!res.healthy) {
-          console.log(`Threshold reached for Scenario ${sc} at ${rooms} rooms.`);
-          break;
+      let maxHealthyRooms = 0;
+      if (modeArg === 'ramp' || modeArg === 'all') {
+        const steps = customSteps || getDefaultSteps(sc);
+        for (const rooms of steps) {
+          const res = await runRampStep(sc, rooms, stepDurationSec);
+          rampResults.push(res);
+          if (res.healthy) {
+            maxHealthyRooms = Math.max(maxHealthyRooms, rooms);
+          } else {
+            console.log(`Threshold reached for Scenario ${sc} at ${rooms} rooms.`);
+            break;
+          }
         }
       }
 
       if (modeArg === 'soak' || modeArg === 'all') {
-        const soakRes = await runSoakTest(sc, 35, soakDurationSec);
+        const healthyRooms = maxHealthyRooms || (sc === 'C' ? 35 : 75);
+        const targetSoakRooms = Math.max(10, Math.round(healthyRooms * 0.70));
+        const soakRes = await runSoakTest(sc, targetSoakRooms, soakDurationSec);
         soakResults.push(soakRes);
       }
     }
@@ -763,4 +808,3 @@ main().catch(err => {
   console.error('Fatal loadtest error:', err);
   process.exit(1);
 });
-

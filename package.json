@@ -11,7 +11,7 @@
     "dev:server": "tsc -p tsconfig.server.json --watch",
     "dev:client": "esbuild client/main.ts --bundle --outfile=dist/client/bundle.js --sourcemap --watch",
     "test": "node --import tsx --test tests/**/*.test.ts",
-    "loadtest": "tsx tools/loadtest.ts"
+    "loadtest": "npm run build:server && tsx tools/loadtest.ts"
   },
   "dependencies": {
     "ws": "^8.18.0",

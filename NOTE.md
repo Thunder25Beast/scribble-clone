@@ -40,7 +40,8 @@ The game is designed with a state recovery model that persists room metadata and
 
 ## Roughly how many rooms one instance can handle and how it was measured
 
-One server instance can handle about 75 realistically playing rooms (around 500 players) on one Node process on this laptop, and about 35 rooms in the worst case of 12 players all drawing.
+One server instance can handle at least 75 and fewer than 100 realistically playing rooms (around 500 players) on one Node process on this laptop, and about 35 rooms in the worst case of 12 players all drawing.
+
 
 Capacity was measured using an automated load test tool running real WebSocket bots that stream drawing strokes at 30 batches per second, submit chat guesses, and simulate reconnects. Latency was measured with embedded stroke timestamps, and room counts were increased in steps until p95 latency exceeded 100 ms, event loop p99 exceeded 50 ms, or CPU exceeded 70 percent.
 

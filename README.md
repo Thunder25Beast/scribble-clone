@@ -91,6 +91,7 @@ This runs both unit tests and integration tests with real WebSocket clients.
 
 ## Running the Capacity Load Test
 
-Run the load test with `npm run loadtest`.
+Run the load test with `npm run loadtest` (which automatically builds the server first).
 Full measurement methodology and results are documented in [LOAD_TEST.md](LOAD_TEST.md).
+
 

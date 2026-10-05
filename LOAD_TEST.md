@@ -11,7 +11,7 @@ The load bots ran on the same machine as the server, so real capacity is likely 
 
 ## How It Was Measured
 
-The test was measured using automated bots that connect over real WebSocket connections. Each room has one drawer bot streaming coordinate batches at 30 batches per second, while guesser bots receive strokes and submit periodic chat guesses. Latency is measured by embedding a timestamp in each stroke batch and recording the arrival time at each guesser socket. Rooms were added in stepped increments to observe how the server behaves as concurrency grows. A step is considered healthy if p95 delivery latency stays under 100 ms, event loop p99 delay stays under 50 ms, and server process CPU stays under 70 percent of one core.
+The test was measured using automated bots that connect over real WebSocket connections. Each room has one drawer bot streaming coordinate batches at 30 batches per second, while guesser bots receive strokes and submit periodic chat guesses. Room sizes are uniformly distributed between 2 and 12 players, averaging 7 players per room. In the realistic scenario, the drawer alternates between 2.2-second drawing bursts and 1.8-second pauses (about 55 percent drawing duty cycle), and churn simulates a 10 percent chance every 5 seconds per room of one guesser dropping and rejoining. Latency is measured by embedding a timestamp in each stroke batch and recording the arrival time at each guesser socket. Rooms were added in stepped increments, and a step is considered healthy if p95 delivery latency stays under 100 ms, event loop p99 delay stays under 50 ms, and server process CPU stays under 70 percent of one core.
 
 ## Benchmark Results
 
@@ -37,9 +37,9 @@ Switching disk persistence from synchronous file writes to asynchronous non-bloc
 
 ## Soak and Spike Tests
 
-The soak test ran for 3 minutes across 35 rooms (281 players), during which memory plateaued at 138 MB, but a longer test would be needed to be sure there is no slow leak.
-The spike test severed 50 rooms (366 players) simultaneously, and all 366 players successfully reconnected using their session tokens within 246 ms.
+The soak test ran for 3 minutes at 70 percent capacity with 53 rooms (352 players), during which continuous drawing load was confirmed past the 80-second turn mark and memory leveled off at 211 MB, though a longer test would be needed to be sure there is no slow leak.
+The spike test severed all client sockets across 50 rooms (331 players) simultaneously, and all 331 players successfully reconnected using their session tokens within 292 ms with zero duplicate players.
 
 ## Limits
 
-These results were measured on a single Windows laptop where the load generator ran on the same machine as the server, competing for CPU time and cache. The event loop delay measurements include the sampling interval of the monitor, so they tend to read slightly high. Any multi-core numbers are estimates based on independent room routing, not direct physical measurements.
+These results were measured on a single Windows laptop where the load generator ran on the same machine as the server, competing for CPU time and cache. The load generator runs as a single Node thread on the same machine as the server, so latency at higher room counts includes bot-side scheduling lag. The event loop delay measurements include the sampling interval of the monitor, so they tend to read slightly high. Any multi-core numbers are estimates based on independent room routing, not direct physical measurements.

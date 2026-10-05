@@ -1,59 +1,42 @@
-# Technical Note: Real Time Drawing and Guessing Architecture
+# Technical Note: Drawing and Guessing Architecture
 
 ## How the canvas syncs and stroke data is sent
 
-The canvas synchronisation architecture avoids transmitting raw raster images or video streams. Instead, it models the drawing area as an append only log of discrete vector operations on a fixed logical canvas of 800 by 600 pixels.
+We do not send images or video streams. Instead, the canvas uses a fixed 800x600 coordinate grid, and strokes are sent as lightweight vector points over WebSockets.
 
-All client displays scale this coordinate grid to fit their local screen dimensions. Pointer inputs are mapped from viewport pixels back into logical integer coordinates.
-
-During an active turn, only the assigned drawer is permitted to author drawing operations:
-
-1. Streaming strokes: When the drawer touches or clicks the canvas, the client immediately paints the initial point locally for zero perceived input lag, and dispatches a `stroke_start` message to the server. Continuous drag events are collected and flushed in small batches every 16 to 33 milliseconds using `requestAnimationFrame`, sending `stroke_points` messages. Releasing the pointer emits a `stroke_end` message.
-2. Server sequencing and broadcast: The server validates the message schema and drawer authorization. It assigns each operation a strictly increasing room sequence number (`seq`) and broadcasts it to all other room participants over WebSocket connections.
-3. Compaction and snapshots: To support late joiners and reconnected players, the server maintains an active canvas stack. Completed strokes and flood fill operations are pushed to the stack. An `undo` command pops the top element, while a `clear` command empties the stack. When a new player arrives mid round, the server transmits a compacted snapshot containing only the active stack rather than the entire historical event log.
-4. Deterministic fill: The fill bucket uses a deterministic scanline flood fill algorithm implemented in shared code. The server and clients use identical logic with color tolerance set to zero, guaranteeing that identical logs produce identical visual results.
+1. **Immediate drawing with batched sending**: When the drawer touches the canvas, the local browser paints immediately so there is zero input lag. Continuous movement points are batched every 16 to 33 ms using `requestAnimationFrame` before sending.
+2. **Server sequencing**: The server checks that the sender is the active drawer, attaches an increasing sequence number (`seq`), and broadcasts the points to other players in the room.
+3. **Snapshots for late joiners**: Late joiners and reconnecting players do not download the full stroke history. The server maintains an active canvas stack (which updates when undo or clear is used) and sends only this clean snapshot when a player joins mid-round.
+4. **Deterministic fill**: The paint bucket tool runs the exact same scanline flood fill code on both the client and server with zero color tolerance, ensuring identical fills on all screens.
 
 ## How latency and ordering are handled
 
-Maintaining correct visual state across varying network conditions requires predictable message ordering and low dispatch overhead:
-
-1. Single writer total order: In drawing and guessing games, only one player draws during any given turn. Because only a single writer exists per room at any moment, complex conflict resolution algorithms such as CRDTs or Operational Transformation are unnecessary. The authoritative server assigns a monotonic sequence number to every operation, establishing a total order for the room.
-2. TCP guarantees and transport tuning: WebSocket connections run over TCP, ensuring strict in order packet arrival per socket. The server sets `perMessageDeflate: false` on the WebSocket server to avoid compression CPU overhead on small messages and eliminate compression buffer latency.
-3. Resynchronization on gaps: Receiving clients track the highest sequence number they have rendered. If a client receives an operation with an unexpected gap, it sends a `resync(lastSeq)` message. The server responds with the missing sequenced operations from its turn buffer or sends a fresh canvas snapshot if the client is too far behind.
-4. Backpressure protection: The server monitors socket buffer levels using `bufferedAmount`. If a client connection buffers excess bytes due to network congestion, the server drops non critical updates or closes the delinquent connection so that a single slow consumer cannot degrade performance for other room members.
-5. Clock synchronization: Clients calculate clock offset via regular lightweight ping and pong messages. The client records transmission timestamp `t0`, receives `pong(t0, serverTime)`, measures round trip time, and calculates the clock skew. This offset is used strictly to sync the visual round countdown display. Stroke rendering does not depend on wall clock synchronization.
+1. **Single drawer means no merge conflicts**: Only one person draws per turn. Because there is only one writer at any moment, we do not need complex algorithms like CRDTs or Operational Transformation. The server gives each message an increasing sequence number to set a clear order.
+2. **Ordered delivery over TCP**: WebSockets use TCP, so packets arrive in order. If a client ever spots a missing sequence number, it asks the server to resend the missing events or requests a fresh canvas snapshot.
+3. **No compression overhead**: We turn off WebSocket per-message compression (`perMessageDeflate: false`). Drawing packets are tiny (under 200 bytes), so compressing them wastes CPU and adds delay.
+4. **Clock synchronization**: Clients do simple ping and pong round trips with the server to measure latency and clock offset. This is only used to keep the round timer countdown in sync across screens; drawing itself does not depend on wall clock time.
 
 ## What happens when the server restarts
 
-The game is designed with a state recovery model that persists room metadata and active game progress to local disk atomically:
-
-1. Safe persistence boundaries: Room state is saved as atomic JSON writes (writing to a temporary file, then renaming). Persistence triggers on critical state transitions: room creation, settings updates, player join or departure, score changes, and turn completions. High frequency stroke points are kept in memory and are not persisted to disk on every stroke.
-2. State that survives a restart:
-* Room identifier and shareable link.
-* Host configuration including round count, draw duration, and custom word banks.
-* All registered players, including their secret reconnection tokens, total scores, host flag, and join order.
-* Overall game round progress and player turn order list.
-3. State that does not survive a restart:
-* In flight strokes and the live drawing canvas of an interrupted turn.
-* Active countdown timers and word choices for a turn currently in progress.
-4. Post restart recovery: When the server process reboots, it reloads all persisted room files. Any room that was interrupted mid turn resets its phase cleanly to `WAITING`, retaining all player scores and configurations. The interrupted drawing turn is abandoned. When players reconnect using their persisted tokens, the room verifies their identity, rebinds their sockets, and allows the host to resume play cleanly without game deadlocks.
+1. **Safe persistence to disk**: The server saves room data to atomic JSON files on disk whenever important events happen: room creation, settings updates, player joins or leaves, score changes, and round ends. High-frequency drawing points stay in memory to avoid hurting disk performance.
+2. **What survives**: Room code, host settings, all players and their secret reconnect tokens, current scores, and round progress.
+3. **What is lost**: In-flight drawing strokes and the active countdown timer of an interrupted turn.
+4. **Clean recovery on reboot**: When the server restarts, it reloads all room files. Any game that was interrupted mid-turn resets to the `WAITING` lobby state with all scores intact. When players reconnect with their stored tokens, their seats are restored, and the host can start the next turn without the game getting stuck.
 
 ## Roughly how many rooms one instance can handle and how it was measured
 
-One server instance can handle at least 75 and fewer than 100 realistically playing rooms (around 500 players) on one Node process on my laptop, and about 35 rooms in the worst case of 12 players all drawing.
+One server process on a single core of my laptop handles **at least 75 and fewer than 100 realistic rooms** (around 500 active players). In the worst-case scenario where 12 players in every room are drawing at the same time, capacity drops to about **35 rooms**.
 
+### How it was measured
 
-Capacity was measured using an automated load test tool running real WebSocket bots that stream drawing strokes at 30 batches per second, submit chat guesses, and simulate reconnects. Latency was measured with embedded stroke timestamps, and room counts were increased in steps until p95 latency exceeded 100 ms, event loop p99 exceeded 50 ms, or CPU exceeded 70 percent.
+1. **Realistic bot load**: I built an automated benchmark tool (`tools/loadtest.ts`) that runs the actual server and connects real WebSocket bots. Bots draw at 30 batches per second, guess words in chat, and simulate reconnects.
+2. **Direct latency measurement**: Each stroke carries a send timestamp, so guessers measure exact end-to-end delivery time on arrival.
+3. **Failure criteria**: Rooms were added in steps until p95 latency exceeded 100 ms, event loop lag exceeded 50 ms, or CPU usage crossed 70%.
+4. **Bottleneck**: The primary limit is CPU time spent serializing and broadcasting messages to everyone in the room. Memory usage is low, averaging about 75 KB per room. Detailed graphs and numbers are documented in [LOAD_TEST.md](LOAD_TEST.md).
 
-The primary limiting factor is CPU time spent sending each stroke to everyone in the room, while memory consumption is negligible at roughly 75 KB per room.
+## Scaling to multiple cores and servers
 
-Because rooms are independent, scaling to multiple cores is achieved by running one process per core and routing connections by room id.
-
-
-## Scaling to multiple servers
-
-Rooms operate with complete independence from one another. Scaling the platform across multiple cores or multi server clusters involves:
-
-1. Horizontal core scaling: Run one Node.js worker per CPU core using Node's cluster module or process managers like PM2, binding to a local port per worker.
-2. Reverse proxy routing: Position an Nginx, HAProxy, or Envoy proxy in front of the instances. Route HTTP and WebSocket upgrade traffic by hashing the `roomId` in the URL path (`/r/<roomId>`). This guarantees that all participants in a given room connect to the same server process without requiring cross process inter worker IPC for stroke replication.
-3. Shared session store: Move atomic file persistence to a fast distributed key value store such as Redis or SQLite on shared volume if server failover between hosts is required.
+Because rooms do not share state, scaling is straightforward:
+1. Run one Node.js process per CPU core using Node cluster or PM2.
+2. Place a reverse proxy like Nginx or Envoy in front, and route connections using the room ID from the URL (`/r/<roomId>`). This ensures all players in the same room connect to the same core without needing inter-process stroke forwarding.
+3. For multi-server clusters, replace local file persistence with a shared Redis or database store.

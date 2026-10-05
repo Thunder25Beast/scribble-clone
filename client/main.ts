@@ -723,7 +723,7 @@ function updateChatInputState(): void {
 
   if (state.phase === 'DRAWING') {
     if (isDrawer) {
-      input.placeholder = 'You are drawing! Chat with players who guessed...';
+      input.placeholder = 'You are drawing! Chat with the room...';
       input.disabled = false;
       if (sendBtn) sendBtn.disabled = false;
     } else {
@@ -774,30 +774,36 @@ function stopTimer(): void {
 
 // ── Chat ──
 function addChatMessage(name: string, text: string, isSystem: boolean, isPrivate: boolean, extraClass?: string): void {
-  const container = $('chat-messages');
-  const div = document.createElement('div');
-  let cls = 'chat-msg';
-  if (isSystem) cls += ' system';
-  if (isPrivate) cls += ' private';
-  if (extraClass) cls += ` ${extraClass}`;
-  div.className = cls;
+  const containers = [
+    document.getElementById('chat-messages'),
+    document.getElementById('lobby-chat-messages')
+  ].filter((el): el is HTMLElement => Boolean(el));
 
-  if (name && !isSystem) {
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'chat-name';
-    nameSpan.textContent = name + ':';
-    div.appendChild(nameSpan);
-    div.appendChild(document.createTextNode(' ' + text));
-  } else {
-    div.textContent = text;
-  }
+  for (const container of containers) {
+    const div = document.createElement('div');
+    let cls = 'chat-msg';
+    if (isSystem) cls += ' system';
+    if (isPrivate) cls += ' private';
+    if (extraClass) cls += ` ${extraClass}`;
+    div.className = cls;
 
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
+    if (name && !isSystem) {
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'chat-name';
+      nameSpan.textContent = name + ':';
+      div.appendChild(nameSpan);
+      div.appendChild(document.createTextNode(' ' + text));
+    } else {
+      div.textContent = text;
+    }
 
-  // Keep max 200 messages
-  while (container.children.length > 200) {
-    container.removeChild(container.firstChild!);
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+
+    // Keep max 200 messages
+    while (container.children.length > 200) {
+      container.removeChild(container.firstChild!);
+    }
   }
 }
 
@@ -1209,6 +1215,27 @@ $('btn-send-chat').addEventListener('click', sendChat);
 $('chat-input').addEventListener('keydown', (e) => {
   if ((e as KeyboardEvent).key === 'Enter') sendChat();
 });
+
+function sendLobbyChat(): void {
+  const input = document.getElementById('lobby-chat-input') as HTMLInputElement | null;
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  (window as any)._lastGuess = text;
+  send({ type: 'chat', text });
+  input.value = '';
+}
+
+const btnLobbySendChat = document.getElementById('btn-lobby-send-chat');
+if (btnLobbySendChat) {
+  btnLobbySendChat.addEventListener('click', sendLobbyChat);
+}
+const lobbyChatInput = document.getElementById('lobby-chat-input') as HTMLInputElement | null;
+if (lobbyChatInput) {
+  lobbyChatInput.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Enter') sendLobbyChat();
+  });
+}
 
 // ── Landing page ──
 $('btn-create-room').addEventListener('click', async () => {

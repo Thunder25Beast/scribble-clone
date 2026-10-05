@@ -864,27 +864,35 @@ export class Room {
       return;
     }
 
-    // Drawer: block if text contains the word
-    if (this.phase === 'DRAWING' && playerId === this.currentDrawerId && this.currentWord) {
-      const normalizedText = normalizeGuess(text);
-      const normalizedWord = normalizeGuess(this.currentWord);
-      if (normalizedText.includes(normalizedWord)) {
-        this.sendTo(playerId, {
-          type: 'chat',
-          playerId: 'system',
-          playerName: 'System',
-          text: 'Your message was blocked because it contains the word.',
-          isSystem: true,
-          isPrivate: true,
-        });
-        return;
+    // Drawer during DRAWING: block if text contains or is a near-miss of the secret word, otherwise broadcast to everyone
+    if (this.phase === 'DRAWING' && playerId === this.currentDrawerId) {
+      if (this.currentWord) {
+        const normalizedText = normalizeGuess(text);
+        const normalizedWord = normalizeGuess(this.currentWord);
+        const tokens = normalizedText.split(/\s+/).filter(Boolean);
+        const hasNearMissToken = isNearMiss(normalizedText, this.currentWord) ||
+          tokens.some(t => isNearMiss(t, this.currentWord!));
+
+        if (normalizedText.includes(normalizedWord) || hasNearMissToken) {
+          this.sendTo(playerId, {
+            type: 'chat',
+            playerId: 'system',
+            playerName: 'System',
+            text: 'Your message was blocked because it contains or is too close to the word.',
+            isSystem: true,
+            isPrivate: true,
+          });
+          return;
+        }
       }
-      // Drawer messages go to the guessed channel
-      this.sendToGuessedAndDrawer({
-        type: 'guessed_chat',
+      // Broadcast drawer messages to everyone in the room
+      this.broadcast({
+        type: 'chat',
         playerId: player.id,
-        playerName: player.name,
+        playerName: `${player.name} (Drawer)`,
         text,
+        isSystem: false,
+        isPrivate: false,
       });
       return;
     }

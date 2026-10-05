@@ -536,6 +536,60 @@ describe('Integration Tests: Real WebSocket Clients and Server Authority', () =>
     await guest.close();
   });
 
+  it('delivers lobby chat to players and delivers drawer chat to guessers while blocking secret word leaks', async () => {
+    const roomId = await createRoom();
+    const host = new TestClient();
+    const guest = new TestClient();
+
+    await Promise.all([host.connect(), guest.connect()]);
+
+    host.send({ type: 'join', roomId, name: 'HostAlice' });
+    await host.waitFor(m => m.type === 'joined');
+
+    guest.send({ type: 'join', roomId, name: 'GuestBob' });
+    await guest.waitFor(m => m.type === 'joined');
+
+    // 1. Lobby chat before starting game
+    guest.send({ type: 'chat', text: 'Hey host, ready to start?' });
+    const lobbyMsgForHost = await host.waitFor(m => m.type === 'chat' && (m as any).text.includes('ready to start?')) as any;
+    assert.ok(lobbyMsgForHost, 'Host received guest message in lobby');
+    assert.equal(lobbyMsgForHost.playerName, 'GuestBob');
+
+    host.send({ type: 'chat', text: 'Starting now!' });
+    const lobbyMsgForGuest = await guest.waitFor(m => m.type === 'chat' && (m as any).text.includes('Starting now!')) as any;
+    assert.ok(lobbyMsgForGuest, 'Guest received host message in lobby');
+
+    // 2. Start game and choose word
+    host.send({ type: 'start_game' });
+    const choosePhase = await host.waitFor(m => m.type === 'phase_change' && m.phase === 'CHOOSING_WORD') as any;
+    const secretWord = choosePhase.wordChoices[0];
+    host.send({ type: 'choose_word', word: secretWord });
+
+    await guest.waitFor(m => m.type === 'phase_change' && m.phase === 'DRAWING');
+
+    // 3. Drawer attempts to leak the secret word in chat -> must be blocked
+    host.send({ type: 'chat', text: `The word is ${secretWord}` });
+    const blockedMsg = await host.waitFor(
+      m => m.type === 'chat' && m.isSystem === true && (m as any).text.includes('blocked because it contains')
+    );
+    assert.ok(blockedMsg, 'Drawer was blocked from leaking secret word');
+
+    // Guest should NOT have received that message
+    const leakedToGuest = guest.messages.find(m => m.type === 'chat' && (m as any).text?.includes(secretWord));
+    assert.strictEqual(leakedToGuest, undefined, 'Guest never receives leaked word');
+
+    // 4. Drawer sends normal chat message -> guest MUST receive it!
+    host.send({ type: 'chat', text: 'Good luck guessing!' });
+    const drawerChatForGuest = await guest.waitFor(
+      m => m.type === 'chat' && (m as any).text === 'Good luck guessing!'
+    ) as any;
+    assert.ok(drawerChatForGuest, 'Guesser received drawer chat message');
+    assert.ok(drawerChatForGuest.playerName.includes('HostAlice'), 'Message reflects drawer sender name');
+
+    await host.close();
+    await guest.close();
+  });
+
   it('recovers room state from disk after server restart', async () => {
     const roomId = await createRoom();
     const p1 = new TestClient();

@@ -40,47 +40,66 @@
   <!-- Lobby screen -->
   <div id="screen-lobby" class="screen">
     <div class="lobby-container">
-      <h2>Lobby</h2>
-      <div class="lobby-top">
+      <div class="lobby-header-bar">
+        <h2>Lobby</h2>
         <div class="share-link">
           <span>Share this link:</span>
           <input type="text" id="share-url" class="input" readonly />
           <button id="btn-copy-link" class="btn btn-small">Copy</button>
         </div>
       </div>
-      <div class="lobby-content">
-        <div class="lobby-settings" id="lobby-settings">
-          <h3>Game Settings <span id="host-only-badge" class="badge">Host Only</span></h3>
-          <label>Rounds
-            <select id="setting-rounds" class="input">
-              <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
-              <option value="4">4</option><option value="5">5</option><option value="6">6</option>
-              <option value="7">7</option><option value="8">8</option><option value="9">9</option>
-              <option value="10">10</option>
-            </select>
-          </label>
-          <label>Draw Time (seconds)
-            <input type="number" id="setting-draw-time" class="input" min="30" max="180" value="80" />
-          </label>
-          <label>Word List
-            <select id="setting-word-mode" class="input">
-              <option value="default">Default Only</option>
-              <option value="custom">Custom Only</option>
-              <option value="mix">Mix</option>
-            </select>
-          </label>
-          <div id="custom-words-area" class="hidden">
-            <label>Custom Words (one per line, min 10)
-              <textarea id="setting-custom-words" class="input textarea" rows="5" placeholder="word1&#10;word2&#10;word3"></textarea>
-            </label>
+      <div class="lobby-layout-grid">
+        <div class="lobby-main-col">
+          <div class="lobby-content">
+            <div class="lobby-settings" id="lobby-settings">
+              <h3>Game Settings <span id="host-only-badge" class="badge">Host Only</span></h3>
+              <label>Rounds
+                <select id="setting-rounds" class="input">
+                  <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
+                  <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+                  <option value="7">7</option><option value="8">8</option><option value="9">9</option>
+                  <option value="10">10</option>
+                </select>
+              </label>
+              <label>Draw Time (seconds)
+                <input type="number" id="setting-draw-time" class="input" min="30" max="180" value="80" />
+              </label>
+              <label>Word List
+                <select id="setting-word-mode" class="input">
+                  <option value="default">Default Only</option>
+                  <option value="custom">Custom Only</option>
+                  <option value="mix">Mix</option>
+                </select>
+              </label>
+              <div id="custom-words-area" class="hidden">
+                <label>Custom Words (one per line, min 10)
+                  <textarea id="setting-custom-words" class="input textarea" rows="5" placeholder="word1&#10;word2&#10;word3"></textarea>
+                </label>
+              </div>
+              <button id="btn-start-game" class="btn btn-primary btn-start">Start Game</button>
+              <p id="lobby-min-players-msg" class="lobby-note hidden">Waiting for at least 1 more player to join (2 players needed)</p>
+            </div>
+            <div class="lobby-players">
+              <h3>Players</h3>
+              <ul id="lobby-player-list" class="player-list"></ul>
+            </div>
           </div>
-          <button id="btn-start-game" class="btn btn-primary btn-start">Start Game</button>
-          <p id="lobby-min-players-msg" class="lobby-note hidden">Waiting for at least 1 more player to join (2 players needed)</p>
         </div>
-        <div class="lobby-players">
-          <h3>Players</h3>
-          <ul id="lobby-player-list" class="player-list"></ul>
-        </div>
+
+        <!-- Chat aside in lobby -->
+        <aside class="lobby-chat-aside" aria-label="Lobby Chat">
+          <div class="lobby-chat-card">
+            <div class="lobby-chat-header">
+              <h3>Chat</h3>
+              <span class="chat-status-badge">Lobby</span>
+            </div>
+            <div id="lobby-chat-messages" class="chat-messages lobby-chat-messages"></div>
+            <div class="chat-input-area lobby-chat-input-area">
+              <input type="text" id="lobby-chat-input" class="input" placeholder="Type a message in lobby..." maxlength="200" />
+              <button id="btn-lobby-send-chat" class="btn btn-small">Send</button>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   </div>

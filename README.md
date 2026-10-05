@@ -91,14 +91,6 @@ This runs both unit tests and integration tests with real WebSocket clients.
 
 ## Running the Capacity Load Test
 
-Run the load test tool to measure capacity:
+Run the load test with `npm run loadtest`.
+Full measurement methodology and results are documented in [LOAD_TEST.md](LOAD_TEST.md).
 
-```bash
-npm run loadtest
-```
-
-Custom step sizes and durations can be specified:
-
-```bash
-npx tsx tools/loadtest.ts --steps=25,50,100,150 --duration=30
-```
